@@ -14,6 +14,8 @@ public class HandleClient implements Runnable {
   
   // Shared storage for all clients - using ConcurrentHashMap for thread safety
   private static final Map<String, String> storage = new ConcurrentHashMap<>();
+  // Storage for expiry times (key -> expiry timestamp in milliseconds)
+  private static final Map<String, Long> expiryTimes = new ConcurrentHashMap<>();
   
   public HandleClient(Socket clientSocket, int clientId) {
     this.clientSocket = clientSocket;
@@ -83,6 +85,23 @@ public class HandleClient implements Runnable {
     return elements;
   }
   
+  private boolean isKeyExpired(String key) {
+    Long expiryTime = expiryTimes.get(key);
+    if (expiryTime == null) {
+      return false; // No expiry set
+    }
+    
+    long currentTime = System.currentTimeMillis();
+    if (currentTime >= expiryTime) {
+      // Key has expired, remove it from both maps
+      storage.remove(key);
+      expiryTimes.remove(key);
+      return true;
+    }
+    
+    return false;
+  }
+  
   private void handleCommand(List<String> command, OutputStream outputStream) throws IOException {
     String commandName = command.get(0).toUpperCase();
     
@@ -108,7 +127,38 @@ public class HandleClient implements Runnable {
         if (command.size() >= 3) {
           String key = command.get(1);
           String value = command.get(2);
+          
+          // Check for PX option (expiry in milliseconds)
+          Long expiryTime = null;
+          if (command.size() >= 5) {
+            for (int i = 3; i < command.size() - 1; i++) {
+              if (command.get(i).toUpperCase().equals("PX")) {
+                try {
+                  long expiryMs = Long.parseLong(command.get(i + 1));
+                  expiryTime = System.currentTimeMillis() + expiryMs;
+                  System.out.println("Client " + clientId + " - SET " + key + " with expiry in " + expiryMs + "ms");
+                  break;
+                } catch (NumberFormatException e) {
+                  outputStream.write("-ERR invalid expire time in set\r\n".getBytes());
+                  System.out.println("Client " + clientId + " - Sent error: invalid PX value");
+                  outputStream.flush();
+                  return;
+                }
+              }
+            }
+          }
+          
+          // Store the key-value pair
           storage.put(key, value);
+          
+          // Store expiry time if specified
+          if (expiryTime != null) {
+            expiryTimes.put(key, expiryTime);
+          } else {
+            // Remove any existing expiry for this key
+            expiryTimes.remove(key);
+          }
+          
           outputStream.write("+OK\r\n".getBytes());
           System.out.println("Client " + clientId + " - SET " + key + " = " + value);
         } else {
@@ -120,15 +170,22 @@ public class HandleClient implements Runnable {
       case "GET":
         if (command.size() >= 2) {
           String key = command.get(1);
-          String value = storage.get(key);
-          if (value != null) {
-            String response = "$" + value.length() + "\r\n" + value + "\r\n";
-            outputStream.write(response.getBytes());
-            System.out.println("Client " + clientId + " - GET " + key + " = " + value);
-          } else {
-            // Return null bulk string for non-existent key
+          
+          // Check if key has expired
+          if (isKeyExpired(key)) {
             outputStream.write("$-1\r\n".getBytes());
-            System.out.println("Client " + clientId + " - GET " + key + " = (null)");
+            System.out.println("Client " + clientId + " - GET " + key + " = (expired)");
+          } else {
+            String value = storage.get(key);
+            if (value != null) {
+              String response = "$" + value.length() + "\r\n" + value + "\r\n";
+              outputStream.write(response.getBytes());
+              System.out.println("Client " + clientId + " - GET " + key + " = " + value);
+            } else {
+              // Return null bulk string for non-existent key
+              outputStream.write("$-1\r\n".getBytes());
+              System.out.println("Client " + clientId + " - GET " + key + " = (null)");
+            }
           }
         } else {
           outputStream.write("-ERR wrong number of arguments for 'get' command\r\n".getBytes());
