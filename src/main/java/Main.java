@@ -9,35 +9,44 @@ public class Main {
     System.out.println("Logs from your program will appear here!");
 
     ServerSocket serverSocket = null;
-    Socket clientSocket = null;
     int port = 6379;
+    int clientCounter = 0;
+    
     try {
       serverSocket = new ServerSocket(port);
       // Since the tester restarts your program quite often, setting
       // SO_REUSEADDR ensures that we don't run into 'Address already in use'
       // errors
       serverSocket.setReuseAddress(true);
-      // Wait for connection from client.
-      clientSocket = serverSocket.accept();
-
+      System.out.println("Redis server started on port " + port);
+      
+      // Continuously accept new client connections
       while (true) {
-        // Read input from client.
-        byte[] input = new byte[1024];
-        clientSocket.getInputStream().read(input);
-        String inputString = new String(input).trim();
-        System.out.println("Received: " + inputString);
-        clientSocket.getOutputStream().write("+PONG\r\n".getBytes());
+        try {
+          // Wait for connection from client.
+          Socket clientSocket = serverSocket.accept();
+          clientCounter++;
+          
+          // Create a new thread to handle this client
+          Thread clientThread = new Thread(new HandleClient(clientSocket, clientCounter));
+          clientThread.start();
+          
+          System.out.println("Started thread for client " + clientCounter);
+        } catch (IOException e) {
+          System.out.println("Error accepting client connection: " + e.getMessage());
+        }
       }
 
     } catch (IOException e) {
       System.out.println("IOException: " + e.getMessage());
     } finally {
       try {
-        if (clientSocket != null) {
-          clientSocket.close();
+        if (serverSocket != null) {
+          serverSocket.close();
+          System.out.println("Server socket closed");
         }
       } catch (IOException e) {
-        System.out.println("IOException: " + e.getMessage());
+        System.out.println("IOException during server cleanup: " + e.getMessage());
       }
     }
   }
