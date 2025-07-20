@@ -5,10 +5,15 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 public class HandleClient implements Runnable {
   private Socket clientSocket;
   private int clientId;
+  
+  // Shared storage for all clients - using ConcurrentHashMap for thread safety
+  private static final Map<String, String> storage = new ConcurrentHashMap<>();
   
   public HandleClient(Socket clientSocket, int clientId) {
     this.clientSocket = clientSocket;
@@ -96,6 +101,38 @@ public class HandleClient implements Runnable {
         } else {
           outputStream.write("-ERR wrong number of arguments for 'echo' command\r\n".getBytes());
           System.out.println("Client " + clientId + " - Sent error: ECHO missing argument");
+        }
+        break;
+        
+      case "SET":
+        if (command.size() >= 3) {
+          String key = command.get(1);
+          String value = command.get(2);
+          storage.put(key, value);
+          outputStream.write("+OK\r\n".getBytes());
+          System.out.println("Client " + clientId + " - SET " + key + " = " + value);
+        } else {
+          outputStream.write("-ERR wrong number of arguments for 'set' command\r\n".getBytes());
+          System.out.println("Client " + clientId + " - Sent error: SET missing arguments");
+        }
+        break;
+        
+      case "GET":
+        if (command.size() >= 2) {
+          String key = command.get(1);
+          String value = storage.get(key);
+          if (value != null) {
+            String response = "$" + value.length() + "\r\n" + value + "\r\n";
+            outputStream.write(response.getBytes());
+            System.out.println("Client " + clientId + " - GET " + key + " = " + value);
+          } else {
+            // Return null bulk string for non-existent key
+            outputStream.write("$-1\r\n".getBytes());
+            System.out.println("Client " + clientId + " - GET " + key + " = (null)");
+          }
+        } else {
+          outputStream.write("-ERR wrong number of arguments for 'get' command\r\n".getBytes());
+          System.out.println("Client " + clientId + " - Sent error: GET missing argument");
         }
         break;
         
