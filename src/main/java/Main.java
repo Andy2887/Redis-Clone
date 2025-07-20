@@ -1,4 +1,6 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -15,8 +17,18 @@ public class Main {
          serverSocket.setReuseAddress(true);
          // Wait for connection from client.
          clientSocket = serverSocket.accept();
+         
+         BufferedReader inputReader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
          OutputStream outputStream = clientSocket.getOutputStream();
-         outputStream.write("+PONG\r\n".getBytes());
+         
+         String inputLine;
+         // Keep reading commands until the connection is closed
+         while ((inputLine = inputReader.readLine()) != null) {
+           // For now, we'll respond to any command with PONG
+           // In a real Redis implementation, we'd parse the command
+           outputStream.write("+PONG\r\n".getBytes());
+           outputStream.flush();
+         }
        } catch (IOException e) {
          System.out.println("IOException: " + e.getMessage());
        } finally {
