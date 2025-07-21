@@ -132,6 +132,10 @@ public class HandleClient implements Runnable {
         handleLpush(command, outputStream);
         break;
         
+      case "LPOP":
+        handleLpop(command, outputStream);
+        break;
+        
       case "LRANGE":
         handleLrange(command, outputStream);
         break;
@@ -292,6 +296,45 @@ public class HandleClient implements Runnable {
     } else {
       outputStream.write("-ERR wrong number of arguments for 'lpush' command\r\n".getBytes());
       System.out.println("Client " + clientId + " - Sent error: LPUSH missing arguments");
+    }
+  }
+  
+  private void handleLpop(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() >= 2) {
+      String listKey = command.get(1);
+      
+      List<String> list = lists.get(listKey);
+      
+      if (list == null || list.isEmpty()) {
+        // Non-existent or empty list returns null bulk string
+        outputStream.write("$-1\r\n".getBytes());
+        System.out.println("Client " + clientId + " - LPOP " + listKey + " (empty/non-existent) -> null");
+      } else {
+        synchronized (list) {
+          if (list.isEmpty()) {
+            // Double-check inside synchronized block
+            outputStream.write("$-1\r\n".getBytes());
+            System.out.println("Client " + clientId + " - LPOP " + listKey + " (empty) -> null");
+          } else {
+            // Remove and return the first element
+            String firstElement = list.remove(0);
+            
+            // Return the element as a RESP bulk string
+            String response = "$" + firstElement.length() + "\r\n" + firstElement + "\r\n";
+            outputStream.write(response.getBytes());
+            System.out.println("Client " + clientId + " - LPOP " + listKey + " -> '" + firstElement + "', remaining: " + list.size());
+            
+            // Clean up empty list to save memory
+            if (list.isEmpty()) {
+              lists.remove(listKey);
+              System.out.println("Client " + clientId + " - Removed empty list: " + listKey);
+            }
+          }
+        }
+      }
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'lpop' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: LPOP missing argument");
     }
   }
   
