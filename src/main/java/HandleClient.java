@@ -198,20 +198,26 @@ public class HandleClient implements Runnable {
       case "RPUSH":
         if (command.size() >= 3) {
           String listKey = command.get(1);
-          String element = command.get(2);
           
           // Get or create the list
           List<String> list = lists.computeIfAbsent(listKey, k -> new ArrayList<>());
           
-          // Add the element to the end of the list
+          // Add all elements to the end of the list
           synchronized (list) {
-            list.add(element);
+            // Process all elements from index 2 onwards
+            for (int i = 2; i < command.size(); i++) {
+              String element = command.get(i);
+              list.add(element);
+              System.out.println("Client " + clientId + " - RPUSH " + listKey + " added '" + element + "'");
+            }
+            
             int listSize = list.size();
+            int elementsAdded = command.size() - 2;
             
             // Return the number of elements in the list as a RESP integer
             String response = ":" + listSize + "\r\n";
             outputStream.write(response.getBytes());
-            System.out.println("Client " + clientId + " - RPUSH " + listKey + " added '" + element + "', list size: " + listSize);
+            System.out.println("Client " + clientId + " - RPUSH " + listKey + " added " + elementsAdded + " elements, list size: " + listSize);
           }
         } else {
           outputStream.write("-ERR wrong number of arguments for 'rpush' command\r\n".getBytes());
