@@ -303,26 +303,77 @@ public class HandleClient implements Runnable {
     if (command.size() >= 2) {
       String listKey = command.get(1);
       
+      // Parse count argument if provided (default is 1)
+      int count = 1;
+      if (command.size() >= 3) {
+        try {
+          count = Integer.parseInt(command.get(2));
+          if (count < 0) {
+            outputStream.write("-ERR value is out of range, must be positive\r\n".getBytes());
+            System.out.println("Client " + clientId + " - Sent error: LPOP negative count");
+            return;
+          }
+        } catch (NumberFormatException e) {
+          outputStream.write("-ERR value is not an integer or out of range\r\n".getBytes());
+          System.out.println("Client " + clientId + " - Sent error: LPOP invalid count format");
+          return;
+        }
+      }
+      
       List<String> list = lists.get(listKey);
       
       if (list == null || list.isEmpty()) {
-        // Non-existent or empty list returns null bulk string
-        outputStream.write("$-1\r\n".getBytes());
-        System.out.println("Client " + clientId + " - LPOP " + listKey + " (empty/non-existent) -> null");
+        if (count == 1) {
+          // Single element LPOP on empty/non-existent list returns null bulk string
+          outputStream.write("$-1\r\n".getBytes());
+          System.out.println("Client " + clientId + " - LPOP " + listKey + " (empty/non-existent) -> null");
+        } else {
+          // Multiple element LPOP on empty/non-existent list returns empty array
+          outputStream.write("*0\r\n".getBytes());
+          System.out.println("Client " + clientId + " - LPOP " + listKey + " " + count + " (empty/non-existent) -> empty array");
+        }
       } else {
         synchronized (list) {
           if (list.isEmpty()) {
-            // Double-check inside synchronized block
-            outputStream.write("$-1\r\n".getBytes());
-            System.out.println("Client " + clientId + " - LPOP " + listKey + " (empty) -> null");
+            if (count == 1) {
+              // Single element LPOP on empty list returns null bulk string
+              outputStream.write("$-1\r\n".getBytes());
+              System.out.println("Client " + clientId + " - LPOP " + listKey + " (empty) -> null");
+            } else {
+              // Multiple element LPOP on empty list returns empty array
+              outputStream.write("*0\r\n".getBytes());
+              System.out.println("Client " + clientId + " - LPOP " + listKey + " " + count + " (empty) -> empty array");
+            }
           } else {
-            // Remove and return the first element
-            String firstElement = list.remove(0);
+            // Determine how many elements to actually remove
+            int elementsToRemove = Math.min(count, list.size());
+            List<String> removedElements = new ArrayList<>();
             
-            // Return the element as a RESP bulk string
-            String response = "$" + firstElement.length() + "\r\n" + firstElement + "\r\n";
-            outputStream.write(response.getBytes());
-            System.out.println("Client " + clientId + " - LPOP " + listKey + " -> '" + firstElement + "', remaining: " + list.size());
+            // Remove elements from the beginning of the list
+            for (int i = 0; i < elementsToRemove; i++) {
+              String element = list.remove(0);
+              removedElements.add(element);
+            }
+            
+            if (count == 1) {
+              // Single element LPOP returns bulk string
+              String element = removedElements.get(0);
+              String response = "$" + element.length() + "\r\n" + element + "\r\n";
+              outputStream.write(response.getBytes());
+              System.out.println("Client " + clientId + " - LPOP " + listKey + " -> '" + element + "', remaining: " + list.size());
+            } else {
+              // Multiple element LPOP returns array
+              StringBuilder response = new StringBuilder();
+              response.append("*").append(removedElements.size()).append("\r\n");
+              
+              for (String element : removedElements) {
+                response.append("$").append(element.length()).append("\r\n");
+                response.append(element).append("\r\n");
+              }
+              
+              outputStream.write(response.toString().getBytes());
+              System.out.println("Client " + clientId + " - LPOP " + listKey + " " + count + " -> " + removedElements.size() + " elements: " + removedElements + ", remaining: " + list.size());
+            }
             
             // Clean up empty list to save memory
             if (list.isEmpty()) {
