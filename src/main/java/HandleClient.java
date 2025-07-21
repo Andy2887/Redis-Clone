@@ -136,6 +136,10 @@ public class HandleClient implements Runnable {
         handleLrange(command, outputStream);
         break;
         
+      case "LLEN":
+        handleLlen(command, outputStream);
+        break;
+        
       default:
         handleUnknownCommand(commandName, outputStream);
         break;
@@ -349,6 +353,33 @@ public class HandleClient implements Runnable {
     } else {
       outputStream.write("-ERR wrong number of arguments for 'lrange' command\r\n".getBytes());
       System.out.println("Client " + clientId + " - Sent error: LRANGE missing arguments");
+    }
+  }
+  
+  private void handleLlen(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() >= 2) {
+      String listKey = command.get(1);
+      
+      List<String> list = lists.get(listKey);
+      
+      int listLength;
+      if (list == null) {
+        // Non-existent list has length 0
+        listLength = 0;
+        System.out.println("Client " + clientId + " - LLEN " + listKey + " (non-existent) -> 0");
+      } else {
+        synchronized (list) {
+          listLength = list.size();
+          System.out.println("Client " + clientId + " - LLEN " + listKey + " -> " + listLength);
+        }
+      }
+      
+      // Return the length as a RESP integer
+      String response = ":" + listLength + "\r\n";
+      outputStream.write(response.getBytes());
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'llen' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: LLEN missing argument");
     }
   }
   
