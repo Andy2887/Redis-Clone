@@ -16,6 +16,8 @@ public class HandleClient implements Runnable {
   private static final Map<String, String> storage = new ConcurrentHashMap<>();
   // Storage for expiry times (key -> expiry timestamp in milliseconds)
   private static final Map<String, Long> expiryTimes = new ConcurrentHashMap<>();
+  // Storage for lists (key -> list of elements)
+  private static final Map<String, List<String>> lists = new ConcurrentHashMap<>();
   
   public HandleClient(Socket clientSocket, int clientId) {
     this.clientSocket = clientSocket;
@@ -190,6 +192,30 @@ public class HandleClient implements Runnable {
         } else {
           outputStream.write("-ERR wrong number of arguments for 'get' command\r\n".getBytes());
           System.out.println("Client " + clientId + " - Sent error: GET missing argument");
+        }
+        break;
+        
+      case "RPUSH":
+        if (command.size() >= 3) {
+          String listKey = command.get(1);
+          String element = command.get(2);
+          
+          // Get or create the list
+          List<String> list = lists.computeIfAbsent(listKey, k -> new ArrayList<>());
+          
+          // Add the element to the end of the list
+          synchronized (list) {
+            list.add(element);
+            int listSize = list.size();
+            
+            // Return the number of elements in the list as a RESP integer
+            String response = ":" + listSize + "\r\n";
+            outputStream.write(response.getBytes());
+            System.out.println("Client " + clientId + " - RPUSH " + listKey + " added '" + element + "', list size: " + listSize);
+          }
+        } else {
+          outputStream.write("-ERR wrong number of arguments for 'rpush' command\r\n".getBytes());
+          System.out.println("Client " + clientId + " - Sent error: RPUSH missing arguments");
         }
         break;
         
