@@ -1,34 +1,151 @@
-[![progress-banner](https://backend.codecrafters.io/progress/redis/d2534e66-06ef-4b56-810b-72857082a9ef)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# Redis Server Implementation in Java
 
-This is a starting point for Java solutions to the
-["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
+A high-performance, thread-safe Redis server implementation built from scratch in Java. This project demonstrates fundamental concepts of network programming, data structures, and concurrent systems design.
 
-In this challenge, you'll build a toy Redis clone that's capable of handling
-basic commands like `PING`, `SET` and `GET`. Along the way we'll learn about
-event loops, the Redis protocol and more.
+## 🚀 Features
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+### Core Commands
+- **Connection Management**: `PING` - Test server connectivity
+- **String Operations**: 
+  - `SET key value [PX milliseconds]` - Store key-value pairs with optional expiry
+  - `GET key` - Retrieve values by key
+  - `ECHO message` - Echo back messages
+- **List Operations**:
+  - `RPUSH key element [element ...]` - Add elements to the right of a list
+  - `LPUSH key element [element ...]` - Add elements to the left of a list
+  - `LPOP key [count]` - Remove and return elements from the left of a list
+  - `BLPOP key timeout` - Blocking left pop with timeout support
+  - `LRANGE key start stop` - Get a range of elements from a list
+  - `LLEN key` - Get the length of a list
 
-# Passing the first stage
+### Advanced Features
+- **Expiry Support**: Automatic key expiration with millisecond precision
+- **Blocking Operations**: BLPOP with configurable timeouts and FIFO client ordering
+- **Thread Safety**: Concurrent client handling with proper synchronization
+- **RESP Protocol**: Full Redis Serialization Protocol compliance
+- **Memory Management**: Automatic cleanup of empty data structures
 
-The entry point for your Redis implementation is in `src/main/java/Main.java`.
-Study and uncomment the relevant code, and push your changes to pass the first
-stage:
+## 🛠️ Setup and Installation
 
-```sh
-git commit -am "pass 1st stage" # any msg
-git push origin master
+### Prerequisites
+- Java 8 or higher
+- Maven 3.6 or higher
+
+### Installation
+1. Clone the repository
+
+2. Start the project:
+   ```bash
+   ./run.sh
+   ```
+
+
+The server will start on `localhost:6379` by default.
+
+## 📖 Usage
+
+### Basic Operations
+```bash
+# Connect using redis-cli or any Redis client
+redis-cli -p 6379
+
+# Test connectivity
+> PING
+PONG
+
+# String operations
+> SET mykey "Hello World"
+OK
+> GET mykey
+"Hello World"
+
+# Set with expiry (in milliseconds)
+> SET temp_key "expires soon" PX 5000
+OK
+
+# List operations
+> RPUSH mylist "first" "second" "third"
+(integer) 3
+> LRANGE mylist 0 -1
+1) "first"
+2) "second"
+3) "third"
+
+# Blocking operations
+> BLPOP mylist 10
+1) "mylist"
+2) "first"
 ```
 
-That's all!
+### Supported Data Types
+- **Strings**: UTF-8 encoded text values
+- **Lists**: Ordered collections of strings with O(1) head/tail operations
 
-# Stage 2 & beyond
+## 🏗️ Architecture
 
-Note: This section is for stages 2 and beyond.
+### Core Components
+- **Main.java**: Server initialization and client connection handling
+- **HandleClient.java**: Individual client request processing and command execution
+- **BlockedClient.java**: Manages blocking operations and timeout handling
 
-1. Ensure you have `mvn` installed locally
-1. Run `./your_program.sh` to run your Redis server, which is implemented in
-   `src/main/java/Main.java`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+### Design Patterns
+- **Multi-threaded Server**: Each client connection runs in its own thread
+- **Command Pattern**: Individual handler methods for each Redis command
+- **Observer Pattern**: Blocked clients are notified when list elements become available
+- **Thread-safe Collections**: ConcurrentHashMap for shared state management
+
+## 🧪 Testing
+
+Test the server using any Redis client:
+```bash
+# Using redis-cli
+redis-cli -p 6379
+
+# Using telnet for raw RESP protocol
+telnet localhost 6379
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes and add tests
+4. Ensure all tests pass: `mvn test`
+5. Commit your changes: `git commit -am 'Add some feature'`
+6. Push to the branch: `git push origin feature-name`
+7. Submit a pull request
+
+### Development Guidelines
+- Follow Java naming conventions
+- Add comprehensive logging for debugging
+- Ensure thread safety for shared resources
+- Write clear, self-documenting code
+- Add unit tests for new features
+
+## 📋 Project Structure
+```
+src/
+├── main/
+│   └── java/
+│       ├── Main.java          # Server entry point
+│       ├── HandleClient.java  # Client request handler
+│       └── BlockedClient.java # Blocking operation support
+└── test/
+    └── java/                  # Unit tests
+```
+
+## 🔮 Future Enhancements
+- Additional Redis commands (HSET, HGET, SADD, etc.)
+- Persistence support (RDB/AOF)
+- Pub/Sub messaging
+- Clustering support
+- Configuration file support
+- Performance metrics and monitoring
+
+## 📄 License
+
+This project is open source and available under the [MIT License](LICENSE).
+
+## 🙏 Acknowledgements
+
+This project follows the [Codecrafters tutorial "Build Your Own Redis"](https://codecrafters.io/challenges/redis).
