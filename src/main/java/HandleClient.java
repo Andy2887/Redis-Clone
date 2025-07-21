@@ -128,6 +128,10 @@ public class HandleClient implements Runnable {
         handleRpush(command, outputStream);
         break;
         
+      case "LPUSH":
+        handleLpush(command, outputStream);
+        break;
+        
       case "LRANGE":
         handleLrange(command, outputStream);
         break;
@@ -253,6 +257,37 @@ public class HandleClient implements Runnable {
     } else {
       outputStream.write("-ERR wrong number of arguments for 'rpush' command\r\n".getBytes());
       System.out.println("Client " + clientId + " - Sent error: RPUSH missing arguments");
+    }
+  }
+  
+  private void handleLpush(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() >= 3) {
+      String listKey = command.get(1);
+      
+      // Get or create the list
+      List<String> list = lists.computeIfAbsent(listKey, k -> new ArrayList<>());
+      
+      // Add all elements to the beginning of the list (insert from left to right)
+      synchronized (list) {
+        // Process elements from index 2 onwards, inserting each at position 0
+        // This will result in the elements appearing in reverse order of how they're specified
+        for (int i = 2; i < command.size(); i++) {
+          String element = command.get(i);
+          list.add(0, element); // Insert at the beginning
+          System.out.println("Client " + clientId + " - LPUSH " + listKey + " prepended '" + element + "'");
+        }
+        
+        int listSize = list.size();
+        int elementsAdded = command.size() - 2;
+        
+        // Return the number of elements in the list as a RESP integer
+        String response = ":" + listSize + "\r\n";
+        outputStream.write(response.getBytes());
+        System.out.println("Client " + clientId + " - LPUSH " + listKey + " added " + elementsAdded + " elements, list size: " + listSize);
+      }
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'lpush' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: LPUSH missing arguments");
     }
   }
   
