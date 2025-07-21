@@ -273,30 +273,37 @@ public class HandleClient implements Runnable {
           synchronized (list) {
             int listSize = list.size();
             
+            // Convert negative indexes to positive indexes
+            int actualStartIndex = convertNegativeIndex(startIndex, listSize);
+            int actualEndIndex = convertNegativeIndex(endIndex, listSize);
+            
+            System.out.println("Client " + clientId + " - LRANGE " + listKey + " original[" + startIndex + ":" + endIndex + "] -> actual[" + actualStartIndex + ":" + actualEndIndex + "], list size: " + listSize);
+            
             // Handle edge cases
-            if (startIndex >= listSize || startIndex > endIndex) {
-              // Start index out of bounds or start > end -> empty array
+            if (actualStartIndex >= listSize || actualStartIndex > actualEndIndex || actualEndIndex < 0) {
+              // Start index out of bounds or start > end or end < 0 -> empty array
               outputStream.write("*0\r\n".getBytes());
-              System.out.println("Client " + clientId + " - LRANGE " + listKey + " [" + startIndex + ":" + endIndex + "] -> empty array (out of bounds)");
+              System.out.println("Client " + clientId + " - LRANGE " + listKey + " -> empty array (out of bounds)");
             } else {
-              // Adjust end index if it's beyond the list size
-              int actualEndIndex = Math.min(endIndex, listSize - 1);
+              // Ensure indexes are within bounds
+              actualStartIndex = Math.max(0, actualStartIndex);
+              actualEndIndex = Math.min(actualEndIndex, listSize - 1);
               
               // Calculate number of elements to return
-              int numElements = actualEndIndex - startIndex + 1;
+              int numElements = actualEndIndex - actualStartIndex + 1;
               
               // Build RESP array response
               StringBuilder response = new StringBuilder();
               response.append("*").append(numElements).append("\r\n");
               
-              for (int i = startIndex; i <= actualEndIndex; i++) {
+              for (int i = actualStartIndex; i <= actualEndIndex; i++) {
                 String element = list.get(i);
                 response.append("$").append(element.length()).append("\r\n");
                 response.append(element).append("\r\n");
               }
               
               outputStream.write(response.toString().getBytes());
-              System.out.println("Client " + clientId + " - LRANGE " + listKey + " [" + startIndex + ":" + actualEndIndex + "] -> " + numElements + " elements");
+              System.out.println("Client " + clientId + " - LRANGE " + listKey + " [" + actualStartIndex + ":" + actualEndIndex + "] -> " + numElements + " elements");
             }
           }
         }
@@ -307,6 +314,18 @@ public class HandleClient implements Runnable {
     } else {
       outputStream.write("-ERR wrong number of arguments for 'lrange' command\r\n".getBytes());
       System.out.println("Client " + clientId + " - Sent error: LRANGE missing arguments");
+    }
+  }
+  
+  private int convertNegativeIndex(int index, int listSize) {
+    if (index < 0) {
+      // Convert negative index to positive: -1 becomes listSize-1, -2 becomes listSize-2, etc.
+      int convertedIndex = listSize + index;
+      // If negative index is out of range (too negative), treat as 0
+      return Math.max(0, convertedIndex);
+    } else {
+      // Positive index, return as is
+      return index;
     }
   }
   
