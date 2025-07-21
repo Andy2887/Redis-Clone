@@ -109,129 +109,210 @@ public class HandleClient implements Runnable {
     
     switch (commandName) {
       case "PING":
-        outputStream.write("+PONG\r\n".getBytes());
-        System.out.println("Client " + clientId + " - Sent: +PONG");
+        handlePing(outputStream);
         break;
         
       case "ECHO":
-        if (command.size() > 1) {
-          String echoArg = command.get(1);
-          String response = "$" + echoArg.length() + "\r\n" + echoArg + "\r\n";
-          outputStream.write(response.getBytes());
-          System.out.println("Client " + clientId + " - Sent ECHO response: " + echoArg);
-        } else {
-          outputStream.write("-ERR wrong number of arguments for 'echo' command\r\n".getBytes());
-          System.out.println("Client " + clientId + " - Sent error: ECHO missing argument");
-        }
+        handleEcho(command, outputStream);
         break;
         
       case "SET":
-        if (command.size() >= 3) {
-          String key = command.get(1);
-          String value = command.get(2);
-          
-          // Check for PX option (expiry in milliseconds)
-          Long expiryTime = null;
-          if (command.size() >= 5) {
-            for (int i = 3; i < command.size() - 1; i++) {
-              if (command.get(i).toUpperCase().equals("PX")) {
-                try {
-                  long expiryMs = Long.parseLong(command.get(i + 1));
-                  expiryTime = System.currentTimeMillis() + expiryMs;
-                  System.out.println("Client " + clientId + " - SET " + key + " with expiry in " + expiryMs + "ms");
-                  break;
-                } catch (NumberFormatException e) {
-                  outputStream.write("-ERR invalid expire time in set\r\n".getBytes());
-                  System.out.println("Client " + clientId + " - Sent error: invalid PX value");
-                  outputStream.flush();
-                  return;
-                }
-              }
-            }
-          }
-          
-          // Store the key-value pair
-          storage.put(key, value);
-          
-          // Store expiry time if specified
-          if (expiryTime != null) {
-            expiryTimes.put(key, expiryTime);
-          } else {
-            // Remove any existing expiry for this key
-            expiryTimes.remove(key);
-          }
-          
-          outputStream.write("+OK\r\n".getBytes());
-          System.out.println("Client " + clientId + " - SET " + key + " = " + value);
-        } else {
-          outputStream.write("-ERR wrong number of arguments for 'set' command\r\n".getBytes());
-          System.out.println("Client " + clientId + " - Sent error: SET missing arguments");
-        }
+        handleSet(command, outputStream);
         break;
         
       case "GET":
-        if (command.size() >= 2) {
-          String key = command.get(1);
-          
-          // Check if key has expired
-          if (isKeyExpired(key)) {
-            outputStream.write("$-1\r\n".getBytes());
-            System.out.println("Client " + clientId + " - GET " + key + " = (expired)");
-          } else {
-            String value = storage.get(key);
-            if (value != null) {
-              String response = "$" + value.length() + "\r\n" + value + "\r\n";
-              outputStream.write(response.getBytes());
-              System.out.println("Client " + clientId + " - GET " + key + " = " + value);
-            } else {
-              // Return null bulk string for non-existent key
-              outputStream.write("$-1\r\n".getBytes());
-              System.out.println("Client " + clientId + " - GET " + key + " = (null)");
-            }
-          }
-        } else {
-          outputStream.write("-ERR wrong number of arguments for 'get' command\r\n".getBytes());
-          System.out.println("Client " + clientId + " - Sent error: GET missing argument");
-        }
+        handleGet(command, outputStream);
         break;
         
       case "RPUSH":
-        if (command.size() >= 3) {
-          String listKey = command.get(1);
-          
-          // Get or create the list
-          List<String> list = lists.computeIfAbsent(listKey, k -> new ArrayList<>());
-          
-          // Add all elements to the end of the list
-          synchronized (list) {
-            // Process all elements from index 2 onwards
-            for (int i = 2; i < command.size(); i++) {
-              String element = command.get(i);
-              list.add(element);
-              System.out.println("Client " + clientId + " - RPUSH " + listKey + " added '" + element + "'");
-            }
-            
-            int listSize = list.size();
-            int elementsAdded = command.size() - 2;
-            
-            // Return the number of elements in the list as a RESP integer
-            String response = ":" + listSize + "\r\n";
-            outputStream.write(response.getBytes());
-            System.out.println("Client " + clientId + " - RPUSH " + listKey + " added " + elementsAdded + " elements, list size: " + listSize);
-          }
-        } else {
-          outputStream.write("-ERR wrong number of arguments for 'rpush' command\r\n".getBytes());
-          System.out.println("Client " + clientId + " - Sent error: RPUSH missing arguments");
-        }
+        handleRpush(command, outputStream);
+        break;
+        
+      case "LRANGE":
+        handleLrange(command, outputStream);
         break;
         
       default:
-        String errorMsg = "-ERR unknown command '" + commandName + "'\r\n";
-        outputStream.write(errorMsg.getBytes());
-        System.out.println("Client " + clientId + " - Sent error: unknown command " + commandName);
+        handleUnknownCommand(commandName, outputStream);
         break;
     }
     
     outputStream.flush();
+  }
+  
+  private void handlePing(OutputStream outputStream) throws IOException {
+    outputStream.write("+PONG\r\n".getBytes());
+    System.out.println("Client " + clientId + " - Sent: +PONG");
+  }
+  
+  private void handleEcho(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() > 1) {
+      String echoArg = command.get(1);
+      String response = "$" + echoArg.length() + "\r\n" + echoArg + "\r\n";
+      outputStream.write(response.getBytes());
+      System.out.println("Client " + clientId + " - Sent ECHO response: " + echoArg);
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'echo' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: ECHO missing argument");
+    }
+  }
+  
+  private void handleSet(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() >= 3) {
+      String key = command.get(1);
+      String value = command.get(2);
+      
+      // Check for PX option (expiry in milliseconds)
+      Long expiryTime = null;
+      if (command.size() >= 5) {
+        for (int i = 3; i < command.size() - 1; i++) {
+          if (command.get(i).toUpperCase().equals("PX")) {
+            try {
+              long expiryMs = Long.parseLong(command.get(i + 1));
+              expiryTime = System.currentTimeMillis() + expiryMs;
+              System.out.println("Client " + clientId + " - SET " + key + " with expiry in " + expiryMs + "ms");
+              break;
+            } catch (NumberFormatException e) {
+              outputStream.write("-ERR invalid expire time in set\r\n".getBytes());
+              System.out.println("Client " + clientId + " - Sent error: invalid PX value");
+              return;
+            }
+          }
+        }
+      }
+      
+      // Store the key-value pair
+      storage.put(key, value);
+      
+      // Store expiry time if specified
+      if (expiryTime != null) {
+        expiryTimes.put(key, expiryTime);
+      } else {
+        // Remove any existing expiry for this key
+        expiryTimes.remove(key);
+      }
+      
+      outputStream.write("+OK\r\n".getBytes());
+      System.out.println("Client " + clientId + " - SET " + key + " = " + value);
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'set' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: SET missing arguments");
+    }
+  }
+  
+  private void handleGet(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() >= 2) {
+      String key = command.get(1);
+      
+      // Check if key has expired
+      if (isKeyExpired(key)) {
+        outputStream.write("$-1\r\n".getBytes());
+        System.out.println("Client " + clientId + " - GET " + key + " = (expired)");
+      } else {
+        String value = storage.get(key);
+        if (value != null) {
+          String response = "$" + value.length() + "\r\n" + value + "\r\n";
+          outputStream.write(response.getBytes());
+          System.out.println("Client " + clientId + " - GET " + key + " = " + value);
+        } else {
+          // Return null bulk string for non-existent key
+          outputStream.write("$-1\r\n".getBytes());
+          System.out.println("Client " + clientId + " - GET " + key + " = (null)");
+        }
+      }
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'get' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: GET missing argument");
+    }
+  }
+  
+  private void handleRpush(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() >= 3) {
+      String listKey = command.get(1);
+      
+      // Get or create the list
+      List<String> list = lists.computeIfAbsent(listKey, k -> new ArrayList<>());
+      
+      // Add all elements to the end of the list
+      synchronized (list) {
+        // Process all elements from index 2 onwards
+        for (int i = 2; i < command.size(); i++) {
+          String element = command.get(i);
+          list.add(element);
+          System.out.println("Client " + clientId + " - RPUSH " + listKey + " added '" + element + "'");
+        }
+        
+        int listSize = list.size();
+        int elementsAdded = command.size() - 2;
+        
+        // Return the number of elements in the list as a RESP integer
+        String response = ":" + listSize + "\r\n";
+        outputStream.write(response.getBytes());
+        System.out.println("Client " + clientId + " - RPUSH " + listKey + " added " + elementsAdded + " elements, list size: " + listSize);
+      }
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'rpush' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: RPUSH missing arguments");
+    }
+  }
+  
+  private void handleLrange(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() >= 4) {
+      String listKey = command.get(1);
+      try {
+        int startIndex = Integer.parseInt(command.get(2));
+        int endIndex = Integer.parseInt(command.get(3));
+        
+        List<String> list = lists.get(listKey);
+        
+        // If list doesn't exist, return empty array
+        if (list == null) {
+          outputStream.write("*0\r\n".getBytes());
+          System.out.println("Client " + clientId + " - LRANGE " + listKey + " (non-existent) -> empty array");
+        } else {
+          synchronized (list) {
+            int listSize = list.size();
+            
+            // Handle edge cases
+            if (startIndex >= listSize || startIndex > endIndex) {
+              // Start index out of bounds or start > end -> empty array
+              outputStream.write("*0\r\n".getBytes());
+              System.out.println("Client " + clientId + " - LRANGE " + listKey + " [" + startIndex + ":" + endIndex + "] -> empty array (out of bounds)");
+            } else {
+              // Adjust end index if it's beyond the list size
+              int actualEndIndex = Math.min(endIndex, listSize - 1);
+              
+              // Calculate number of elements to return
+              int numElements = actualEndIndex - startIndex + 1;
+              
+              // Build RESP array response
+              StringBuilder response = new StringBuilder();
+              response.append("*").append(numElements).append("\r\n");
+              
+              for (int i = startIndex; i <= actualEndIndex; i++) {
+                String element = list.get(i);
+                response.append("$").append(element.length()).append("\r\n");
+                response.append(element).append("\r\n");
+              }
+              
+              outputStream.write(response.toString().getBytes());
+              System.out.println("Client " + clientId + " - LRANGE " + listKey + " [" + startIndex + ":" + actualEndIndex + "] -> " + numElements + " elements");
+            }
+          }
+        }
+      } catch (NumberFormatException e) {
+        outputStream.write("-ERR value is not an integer or out of range\r\n".getBytes());
+        System.out.println("Client " + clientId + " - Sent error: LRANGE invalid index format");
+      }
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'lrange' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: LRANGE missing arguments");
+    }
+  }
+  
+  private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
+    String errorMsg = "-ERR unknown command '" + commandName + "'\r\n";
+    outputStream.write(errorMsg.getBytes());
+    System.out.println("Client " + clientId + " - Sent error: unknown command " + commandName);
   }
 }
