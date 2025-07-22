@@ -172,6 +172,10 @@ public class HandleClient implements Runnable {
         handleXadd(command, outputStream);
         break;
         
+      case "XRANGE":
+        handleXrange(command, outputStream);
+        break;
+        
       default:
         handleUnknownCommand(commandName, outputStream);
         break;
@@ -678,7 +682,7 @@ public class HandleClient implements Runnable {
       }
       
       // Parse field-value pairs
-      Map<String, String> fields = new ConcurrentHashMap<>();
+      Map<String, String> fields = new java.util.LinkedHashMap<>();
       for (int i = 3; i < command.size(); i += 2) {
         String fieldName = command.get(i);
         String fieldValue = command.get(i + 1);
@@ -710,6 +714,72 @@ public class HandleClient implements Runnable {
         outputStream.write("-ERR wrong number of arguments for 'xadd' command\r\n".getBytes());
         System.out.println("Client " + clientId + " - Sent error: XADD odd number of field-value pairs");
       }
+    }
+  }
+  
+  private void handleXrange(List<String> command, OutputStream outputStream) throws IOException {
+    // XRANGE stream_key start end
+    if (command.size() >= 4) {
+      String streamKey = command.get(1);
+      String startId = command.get(2);
+      String endId = command.get(3);
+      
+      // Get the stream
+      List<StreamEntry> stream = streams.get(streamKey);
+      
+      if (stream == null || stream.isEmpty()) {
+        // Stream doesn't exist or is empty, return empty array
+        outputStream.write("*0\r\n".getBytes());
+        System.out.println("Client " + clientId + " - XRANGE " + streamKey + " (empty/non-existent) -> empty array");
+        return;
+      }
+      
+      synchronized (stream) {
+        // Filter entries based on start and end IDs
+        List<StreamEntry> matchingEntries = new ArrayList<>();
+        
+        for (StreamEntry entry : stream) {
+          if (isEntryInRange(entry.id, startId, endId)) {
+            matchingEntries.add(entry);
+          }
+        }
+        
+        // Build RESP array response
+        StringBuilder response = new StringBuilder();
+        response.append("*").append(matchingEntries.size()).append("\r\n");
+        
+        for (StreamEntry entry : matchingEntries) {
+          // Each entry is an array with 2 elements: [id, fields_array]
+          response.append("*2\r\n");
+          
+          // Entry ID as bulk string
+          response.append("$").append(entry.id.length()).append("\r\n");
+          response.append(entry.id).append("\r\n");
+          
+          // Fields array
+          response.append("*").append(entry.fields.size() * 2).append("\r\n");
+          
+          // Add field-value pairs (preserve insertion order)
+          for (Map.Entry<String, String> fieldEntry : entry.fields.entrySet()) {
+            String fieldName = fieldEntry.getKey();
+            String fieldValue = fieldEntry.getValue();
+            
+            // Field name
+            response.append("$").append(fieldName.length()).append("\r\n");
+            response.append(fieldName).append("\r\n");
+            
+            // Field value
+            response.append("$").append(fieldValue.length()).append("\r\n");
+            response.append(fieldValue).append("\r\n");
+          }
+        }
+        
+        outputStream.write(response.toString().getBytes());
+        System.out.println("Client " + clientId + " - XRANGE " + streamKey + " [" + startId + ":" + endId + "] -> " + matchingEntries.size() + " entries");
+      }
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'xrange' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: XRANGE missing arguments");
     }
   }
   
@@ -849,6 +919,49 @@ public class HandleClient implements Runnable {
           return 0; // For other times, default sequence is 0
         }
       }
+    }
+  }
+  
+  private boolean isEntryInRange(String entryId, String startId, String endId) {
+    // Handle special cases for start and end
+    String actualStartId = startId.equals("-") ? "0-0" : normalizeId(startId);
+    String actualEndId = endId.equals("+") ? Long.MAX_VALUE + "-" + Long.MAX_VALUE : normalizeId(endId);
+    
+    // Compare entry ID with start and end
+    return compareIds(entryId, actualStartId) >= 0 && compareIds(entryId, actualEndId) <= 0;
+  }
+  
+  private String normalizeId(String id) {
+    // If ID doesn't contain sequence number, add default sequence (0 for start, max for end)
+    if (!id.contains("-")) {
+      return id + "-0";
+    }
+    return id;
+  }
+  
+  private int compareIds(String id1, String id2) {
+    String[] parts1 = id1.split("-");
+    String[] parts2 = id2.split("-");
+    
+    if (parts1.length != 2 || parts2.length != 2) {
+      return 0; // Invalid format, treat as equal
+    }
+    
+    try {
+      long milliseconds1 = Long.parseLong(parts1[0]);
+      long sequence1 = Long.parseLong(parts1[1]);
+      long milliseconds2 = Long.parseLong(parts2[0]);
+      long sequence2 = Long.parseLong(parts2[1]);
+      
+      // Compare milliseconds first
+      if (milliseconds1 != milliseconds2) {
+        return Long.compare(milliseconds1, milliseconds2);
+      }
+      
+      // If milliseconds are equal, compare sequence numbers
+      return Long.compare(sequence1, sequence2);
+    } catch (NumberFormatException e) {
+      return 0; // Invalid format, treat as equal
     }
   }
   
