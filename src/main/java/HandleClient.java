@@ -666,11 +666,14 @@ public class HandleClient implements Runnable {
       String streamKey = command.get(1);
       String entryId = command.get(2);
       
+      // Auto-generate sequence number if needed
+      String actualEntryId = generateEntryId(entryId, streamKey);
+      
       // Validate entry ID format and value
-      String validationError = validateEntryId(entryId, streamKey);
+      String validationError = validateEntryId(actualEntryId, streamKey);
       if (validationError != null) {
         outputStream.write(validationError.getBytes());
-        System.out.println("Client " + clientId + " - XADD " + streamKey + " validation error: " + entryId);
+        System.out.println("Client " + clientId + " - XADD " + streamKey + " validation error: " + actualEntryId);
         return;
       }
       
@@ -683,7 +686,7 @@ public class HandleClient implements Runnable {
       }
       
       // Create stream entry
-      StreamEntry entry = new StreamEntry(entryId, fields);
+      StreamEntry entry = new StreamEntry(actualEntryId, fields);
       
       // Get or create the stream
       List<StreamEntry> stream = streams.computeIfAbsent(streamKey, k -> new ArrayList<>());
@@ -691,13 +694,13 @@ public class HandleClient implements Runnable {
       // Add entry to stream
       synchronized (stream) {
         stream.add(entry);
-        System.out.println("Client " + clientId + " - XADD " + streamKey + " " + entryId + " -> " + fields.size() + " fields");
+        System.out.println("Client " + clientId + " - XADD " + streamKey + " " + actualEntryId + " -> " + fields.size() + " fields");
       }
       
       // Return the entry ID as a bulk string
-      String response = "$" + entryId.length() + "\r\n" + entryId + "\r\n";
+      String response = "$" + actualEntryId.length() + "\r\n" + actualEntryId + "\r\n";
       outputStream.write(response.getBytes());
-      System.out.println("Client " + clientId + " - XADD " + streamKey + " returned entry ID: " + entryId);
+      System.out.println("Client " + clientId + " - XADD " + streamKey + " returned entry ID: " + actualEntryId);
       
     } else {
       if (command.size() < 5) {
@@ -762,6 +765,83 @@ public class HandleClient implements Runnable {
     return null; // No validation error
   }
   
+  private String generateEntryId(String entryId, String streamKey) {
+    // Check if sequence number needs to be auto-generated
+    String[] parts = entryId.split("-");
+    if (parts.length != 2) {
+      return entryId; // Invalid format, let validation handle it
+    }
+    
+    // If sequence part is not "*", return the original ID
+    if (!parts[1].equals("*")) {
+      return entryId;
+    }
+    
+    // Parse the milliseconds part
+    long milliseconds;
+    try {
+      milliseconds = Long.parseLong(parts[0]);
+    } catch (NumberFormatException e) {
+      return entryId; // Invalid format, let validation handle it
+    }
+    
+    // Auto-generate sequence number
+    long sequence = getNextSequenceNumber(milliseconds, streamKey);
+    
+    String generatedId = milliseconds + "-" + sequence;
+    System.out.println("Client " + clientId + " - Generated entry ID: " + entryId + " -> " + generatedId);
+    return generatedId;
+  }
+  
+  private long getNextSequenceNumber(long milliseconds, String streamKey) {
+    // Get the stream to find the last sequence number for this milliseconds value
+    List<StreamEntry> stream = streams.get(streamKey);
+    
+    if (stream == null || stream.isEmpty()) {
+      // No existing entries
+      if (milliseconds == 0) {
+        return 1; // Special case: for time 0, default sequence is 1
+      } else {
+        return 0; // For other times, default sequence is 0
+      }
+    }
+    
+    synchronized (stream) {
+      // Find the highest sequence number for the given milliseconds
+      long maxSequence = -1;
+      boolean foundSameTime = false;
+      
+      for (StreamEntry entry : stream) {
+        String[] entryParts = entry.id.split("-");
+        if (entryParts.length == 2) {
+          try {
+            long entryMilliseconds = Long.parseLong(entryParts[0]);
+            long entrySequence = Long.parseLong(entryParts[1]);
+            
+            if (entryMilliseconds == milliseconds) {
+              foundSameTime = true;
+              maxSequence = Math.max(maxSequence, entrySequence);
+            }
+          } catch (NumberFormatException e) {
+            // Skip invalid entries
+          }
+        }
+      }
+      
+      if (foundSameTime) {
+        // Found entries with the same milliseconds, increment the max sequence
+        return maxSequence + 1;
+      } else {
+        // No entries with the same milliseconds
+        if (milliseconds == 0) {
+          return 1; // Special case: for time 0, default sequence is 1
+        } else {
+          return 0; // For other times, default sequence is 0
+        }
+      }
+    }
+  }
+  
   private int convertNegativeIndex(int index, int listSize) {
     if (index < 0) {
       // Convert negative index to positive: -1 becomes listSize-1, -2 becomes listSize-2, etc.
@@ -811,10 +891,6 @@ public class HandleClient implements Runnable {
       if (clientQueue.isEmpty()) {
         blockedClients.remove(listKey);
       }
-    }
-    
-    if (blockedClient == null) {
-      return;
     }
     
     // Get the list to check if it has elements
