@@ -13,12 +13,25 @@ public class HandleClient implements Runnable {
   private Socket clientSocket;
   private int clientId;
   
+  // Simple class to represent a stream entry
+  private static class StreamEntry {
+    public final String id;
+    public final Map<String, String> fields;
+    
+    public StreamEntry(String id, Map<String, String> fields) {
+      this.id = id;
+      this.fields = fields;
+    }
+  }
+  
   // Shared storage for all clients - using ConcurrentHashMap for thread safety
   private static final Map<String, String> storage = new ConcurrentHashMap<>();
   // Storage for expiry times (key -> expiry timestamp in milliseconds)
   private static final Map<String, Long> expiryTimes = new ConcurrentHashMap<>();
   // Storage for lists (key -> list of elements)
   private static final Map<String, List<String>> lists = new ConcurrentHashMap<>();
+  // Storage for streams (key -> list of stream entries)
+  private static final Map<String, List<StreamEntry>> streams = new ConcurrentHashMap<>();
   // Storage for blocked clients waiting for list elements (listKey -> queue of blocked clients)
   private static final Map<String, Queue<BlockedClient>> blockedClients = new ConcurrentHashMap<>();
   
@@ -153,6 +166,10 @@ public class HandleClient implements Runnable {
         
       case "TYPE":
         handleType(command, outputStream);
+        break;
+        
+      case "XADD":
+        handleXadd(command, outputStream);
         break;
         
       default:
@@ -618,12 +635,63 @@ public class HandleClient implements Runnable {
         return;
       }
       
+      // Check if it's a stream type
+      List<StreamEntry> stream = streams.get(key);
+      if (stream != null && !stream.isEmpty()) {
+        outputStream.write("+stream\r\n".getBytes());
+        System.out.println("Client " + clientId + " - TYPE " + key + " -> stream");
+        return;
+      }
+      
       // Key doesn't exist
       outputStream.write("+none\r\n".getBytes());
       System.out.println("Client " + clientId + " - TYPE " + key + " -> none");
     } else {
       outputStream.write("-ERR wrong number of arguments for 'type' command\r\n".getBytes());
       System.out.println("Client " + clientId + " - Sent error: TYPE missing argument");
+    }
+  }
+  
+  private void handleXadd(List<String> command, OutputStream outputStream) throws IOException {
+    // XADD stream_key entry_id field1 value1 [field2 value2 ...]
+    // Minimum: XADD stream_key entry_id field1 value1 (4 arguments)
+    if (command.size() >= 5 && (command.size() % 2) == 1) {
+      String streamKey = command.get(1);
+      String entryId = command.get(2);
+      
+      // Parse field-value pairs
+      Map<String, String> fields = new ConcurrentHashMap<>();
+      for (int i = 3; i < command.size(); i += 2) {
+        String fieldName = command.get(i);
+        String fieldValue = command.get(i + 1);
+        fields.put(fieldName, fieldValue);
+      }
+      
+      // Create stream entry
+      StreamEntry entry = new StreamEntry(entryId, fields);
+      
+      // Get or create the stream
+      List<StreamEntry> stream = streams.computeIfAbsent(streamKey, k -> new ArrayList<>());
+      
+      // Add entry to stream
+      synchronized (stream) {
+        stream.add(entry);
+        System.out.println("Client " + clientId + " - XADD " + streamKey + " " + entryId + " -> " + fields.size() + " fields");
+      }
+      
+      // Return the entry ID as a bulk string
+      String response = "$" + entryId.length() + "\r\n" + entryId + "\r\n";
+      outputStream.write(response.getBytes());
+      System.out.println("Client " + clientId + " - XADD " + streamKey + " returned entry ID: " + entryId);
+      
+    } else {
+      if (command.size() < 5) {
+        outputStream.write("-ERR wrong number of arguments for 'xadd' command\r\n".getBytes());
+        System.out.println("Client " + clientId + " - Sent error: XADD missing arguments");
+      } else {
+        outputStream.write("-ERR wrong number of arguments for 'xadd' command\r\n".getBytes());
+        System.out.println("Client " + clientId + " - Sent error: XADD odd number of field-value pairs");
+      }
     }
   }
   
