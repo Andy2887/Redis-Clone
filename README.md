@@ -135,12 +135,11 @@ src/
 ```
 
 ## 🔮 Future Enhancements
-- Additional Redis commands (HSET, HGET, SADD, etc.)
-- Persistence support (RDB/AOF)
-- Pub/Sub messaging
-- Clustering support
-- Configuration file support
-- Performance metrics and monitoring
+- Additional Redis commands
+- Persistence support (RDB)
+- Transactions
+- Replication
+- Fix the BLPOP command bug
 
 ## 📄 License
 

@@ -34,6 +34,8 @@ public class HandleClient implements Runnable {
   private static final Map<String, List<StreamEntry>> streams = new ConcurrentHashMap<>();
   // Storage for blocked clients waiting for list elements (listKey -> queue of blocked clients)
   private static final Map<String, Queue<BlockedClient>> blockedClients = new ConcurrentHashMap<>();
+  // A global lock for all list operations
+  private static final Object listOperationsLock = new Object();
   
   public HandleClient(Socket clientSocket, int clientId) {
     this.clientSocket = clientSocket;
@@ -274,11 +276,11 @@ public class HandleClient implements Runnable {
     if (command.size() >= 3) {
       String listKey = command.get(1);
       
-      // Get or create the list
-      List<String> list = lists.computeIfAbsent(listKey, k -> new ArrayList<>());
-      
-      // Add all elements to the end of the list
-      synchronized (list) {
+      synchronized (listOperationsLock) {
+        // Get or create the list
+        List<String> list = lists.computeIfAbsent(listKey, k -> new ArrayList<>());
+        
+        // Add all elements to the end of the list
         // Process all elements from index 2 onwards
         for (int i = 2; i < command.size(); i++) {
           String element = command.get(i);
@@ -428,6 +430,7 @@ public class HandleClient implements Runnable {
   }
   
   private void handleBlpop(List<String> command, OutputStream outputStream) throws IOException {
+    System.out.println("Started handling BLPOP command for " + clientId);
     if (command.size() >= 3) {
       String listKey = command.get(1);
       
@@ -449,56 +452,58 @@ public class HandleClient implements Runnable {
       // Convert timeout to milliseconds (0 means wait indefinitely)
       long timeoutMs = timeoutSeconds == 0 ? 0 : (long) (timeoutSeconds * 1000);
       
-      List<String> list = lists.get(listKey);
+      // Declare blockedClient outside the synchronized block
+      BlockedClient blockedClient = null;
       
-      // Check if list exists and has elements
-      if (list != null) {
-        synchronized (list) {
-          if (!list.isEmpty()) {
-            // List has elements, pop one immediately
-            String element = list.remove(0);
-            
-            // Return array with [listKey, element]
-            StringBuilder response = new StringBuilder();
-            response.append("*2\r\n");
-            response.append("$").append(listKey.length()).append("\r\n").append(listKey).append("\r\n");
-            response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
-            
-            outputStream.write(response.toString().getBytes());
-            System.out.println("Client " + clientId + " - BLPOP " + listKey + " -> immediate ['" + listKey + "', '" + element + "'], remaining: " + list.size());
-            
-            // Clean up empty list
-            if (list.isEmpty()) {
-              lists.remove(listKey);
-              System.out.println("Client " + clientId + " - Removed empty list: " + listKey);
-            }
-            return;
+      synchronized (listOperationsLock) {
+        List<String> list = lists.get(listKey);
+        
+        // Check if list exists and has elements
+        if (list != null && !list.isEmpty()) {
+          // List has elements, pop one immediately
+          String element = list.remove(0);
+          
+          // Return array with [listKey, element]
+          StringBuilder response = new StringBuilder();
+          response.append("*2\r\n");
+          response.append("$").append(listKey.length()).append("\r\n").append(listKey).append("\r\n");
+          response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
+          
+          outputStream.write(response.toString().getBytes());
+          System.out.println("Client " + clientId + " - BLPOP " + listKey + " -> immediate ['" + listKey + "', '" + element + "'], remaining: " + list.size());
+          
+          // Clean up empty list
+          if (list.isEmpty()) {
+            lists.remove(listKey);
+            System.out.println("Client " + clientId + " - Removed empty list: " + listKey);
           }
+          return;
         }
-      }
-      
-      // List is empty or doesn't exist, block the client
-      BlockedClient blockedClient = new BlockedClient(clientId, outputStream, listKey, timeoutMs);
-      
-      // Add to blocked clients queue for this list with proper synchronization
-      synchronized (blockedClients) {
+        
+        // List is empty or doesn't exist, block the client
+        blockedClient = new BlockedClient(clientId, outputStream, listKey, timeoutMs);
+        
+        // Add to blocked clients queue for this list
         Queue<BlockedClient> clientQueue = blockedClients.computeIfAbsent(listKey, k -> new java.util.concurrent.ConcurrentLinkedQueue<>());
         clientQueue.offer(blockedClient);
         System.out.println("Client " + clientId + " - BLPOP " + listKey + " blocking (timeout: " + timeoutSeconds + "s), queue size: " + clientQueue.size() + ", queue order: " + getQueueOrder(clientQueue));
       }
       
-      // Start timeout monitoring in a separate thread
+      // Start timeout monitoring in a separate thread (outside the synchronized block)
       if (timeoutMs > 0) {
+        // Capture the blockedClient reference for the timeout thread
+        final BlockedClient finalBlockedClient = blockedClient;
+        
         new Thread(() -> {
           try {
             Thread.sleep(timeoutMs);
             
-            // Check if client is still blocked with proper synchronization
+            // Check if client is still blocked
             boolean wasBlocked = false;
-            synchronized (blockedClients) {
+            synchronized (listOperationsLock) {
               Queue<BlockedClient> queue = blockedClients.get(listKey);
               if (queue != null) {
-                wasBlocked = queue.remove(blockedClient);
+                wasBlocked = queue.remove(finalBlockedClient);
                 // Clean up empty queue
                 if (queue.isEmpty()) {
                   blockedClients.remove(listKey);
@@ -521,9 +526,6 @@ public class HandleClient implements Runnable {
           }
         }).start();
       }
-      
-      // Note: The actual response will be sent when an element is added to the list
-      // or when the timeout expires (handled above)
       
     } else {
       outputStream.write("-ERR wrong number of arguments for 'blpop' command\r\n".getBytes());
@@ -998,22 +1000,21 @@ public class HandleClient implements Runnable {
     return sb.toString();
   }
   
-  private void notifyBlockedClients(String listKey) {
+  private static void notifyBlockedClients(String listKey) {
+    // This method should be called within the listOperationsLock
     BlockedClient blockedClient = null;
     
-    // Get the first blocked client with proper synchronization
-    synchronized (blockedClients) {
-      Queue<BlockedClient> clientQueue = blockedClients.get(listKey);
-      if (clientQueue == null || clientQueue.isEmpty()) {
-        return;
-      }
-      blockedClient = clientQueue.poll();
-      System.out.println("Notifying blocked client " + blockedClient.clientId + " for list " + listKey + ", remaining queue size: " + clientQueue.size());
-      
-      // Clean up empty queue
-      if (clientQueue.isEmpty()) {
-        blockedClients.remove(listKey);
-      }
+    // Get the first blocked client
+    Queue<BlockedClient> clientQueue = blockedClients.get(listKey);
+    if (clientQueue == null || clientQueue.isEmpty()) {
+      return;
+    }
+    blockedClient = clientQueue.poll();
+    System.out.println("Notifying blocked client " + blockedClient.clientId + " for list " + listKey + ", remaining queue size: " + clientQueue.size());
+    
+    // Clean up empty queue
+    if (clientQueue.isEmpty()) {
+      blockedClients.remove(listKey);
     }
     
     // Get the list to check if it has elements
@@ -1022,33 +1023,31 @@ public class HandleClient implements Runnable {
       return;
     }
     
-    synchronized (list) {
-      if (!list.isEmpty()) {
-        String element = list.remove(0);
+    if (!list.isEmpty()) {
+      String element = list.remove(0);
+      
+      try {
+        // Send response array [listKey, element]
+        StringBuilder response = new StringBuilder();
+        response.append("*2\r\n");
+        response.append("$").append(listKey.length()).append("\r\n").append(listKey).append("\r\n");
+        response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
         
-        try {
-          // Send response array [listKey, element]
-          StringBuilder response = new StringBuilder();
-          response.append("*2\r\n");
-          response.append("$").append(listKey.length()).append("\r\n").append(listKey).append("\r\n");
-          response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
-          
-          blockedClient.outputStream.write(response.toString().getBytes());
-          blockedClient.outputStream.flush();
-          
-          System.out.println("Client " + blockedClient.clientId + " - BLPOP " + listKey + " unblocked with ['" + listKey + "', '" + element + "'], remaining: " + list.size());
-          
-          // Clean up empty list
-          if (list.isEmpty()) {
-            lists.remove(listKey);
-            System.out.println("Client " + blockedClient.clientId + " - Removed empty list: " + listKey);
-          }
-          
-        } catch (IOException e) {
-          System.out.println("Client " + blockedClient.clientId + " - IOException during BLPOP response: " + e.getMessage());
-          // Put the element back at the beginning of the list
-          list.add(0, element);
+        blockedClient.outputStream.write(response.toString().getBytes());
+        blockedClient.outputStream.flush();
+        
+        System.out.println("Client " + blockedClient.clientId + " - BLPOP " + listKey + " unblocked with ['" + listKey + "', '" + element + "'], remaining: " + list.size());
+        
+        // Clean up empty list
+        if (list.isEmpty()) {
+          lists.remove(listKey);
+          System.out.println("Client " + blockedClient.clientId + " - Removed empty list: " + listKey);
         }
+        
+      } catch (IOException e) {
+        System.out.println("Client " + blockedClient.clientId + " - IOException during BLPOP response: " + e.getMessage());
+        // Put the element back at the beginning of the list
+        list.add(0, element);
       }
     }
   }
