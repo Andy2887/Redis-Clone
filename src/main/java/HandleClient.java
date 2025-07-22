@@ -151,6 +151,10 @@ public class HandleClient implements Runnable {
         handleLlen(command, outputStream);
         break;
         
+      case "TYPE":
+        handleType(command, outputStream);
+        break;
+        
       default:
         handleUnknownCommand(commandName, outputStream);
         break;
@@ -584,6 +588,42 @@ public class HandleClient implements Runnable {
     } else {
       outputStream.write("-ERR wrong number of arguments for 'llen' command\r\n".getBytes());
       System.out.println("Client " + clientId + " - Sent error: LLEN missing argument");
+    }
+  }
+  
+  private void handleType(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() >= 2) {
+      String key = command.get(1);
+      
+      // Check if key has expired first
+      if (isKeyExpired(key)) {
+        // Key has expired, treat as non-existent
+        outputStream.write("+none\r\n".getBytes());
+        System.out.println("Client " + clientId + " - TYPE " + key + " -> none (expired)");
+        return;
+      }
+      
+      // Check if it's a string type (stored in the main storage map)
+      if (storage.containsKey(key)) {
+        outputStream.write("+string\r\n".getBytes());
+        System.out.println("Client " + clientId + " - TYPE " + key + " -> string");
+        return;
+      }
+      
+      // Check if it's a list type
+      List<String> list = lists.get(key);
+      if (list != null && !list.isEmpty()) {
+        outputStream.write("+list\r\n".getBytes());
+        System.out.println("Client " + clientId + " - TYPE " + key + " -> list");
+        return;
+      }
+      
+      // Key doesn't exist
+      outputStream.write("+none\r\n".getBytes());
+      System.out.println("Client " + clientId + " - TYPE " + key + " -> none");
+    } else {
+      outputStream.write("-ERR wrong number of arguments for 'type' command\r\n".getBytes());
+      System.out.println("Client " + clientId + " - Sent error: TYPE missing argument");
     }
   }
   
