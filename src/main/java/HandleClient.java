@@ -476,11 +476,12 @@ public class HandleClient implements Runnable {
       // List is empty or doesn't exist, block the client
       BlockedClient blockedClient = new BlockedClient(clientId, outputStream, listKey, timeoutMs);
       
-      // Add to blocked clients queue for this list
-      Queue<BlockedClient> clientQueue = blockedClients.computeIfAbsent(listKey, k -> new java.util.concurrent.ConcurrentLinkedQueue<>());
-      clientQueue.offer(blockedClient);
-      
-      System.out.println("Client " + clientId + " - BLPOP " + listKey + " blocking (timeout: " + timeoutSeconds + "s)");
+      // Add to blocked clients queue for this list with proper synchronization
+      synchronized (blockedClients) {
+        Queue<BlockedClient> clientQueue = blockedClients.computeIfAbsent(listKey, k -> new java.util.concurrent.ConcurrentLinkedQueue<>());
+        clientQueue.offer(blockedClient);
+        System.out.println("Client " + clientId + " - BLPOP " + listKey + " blocking (timeout: " + timeoutSeconds + "s), queue size: " + clientQueue.size() + ", queue order: " + getQueueOrder(clientQueue));
+      }
       
       // Start timeout monitoring in a separate thread
       if (timeoutMs > 0) {
@@ -488,9 +489,20 @@ public class HandleClient implements Runnable {
           try {
             Thread.sleep(timeoutMs);
             
-            // Check if client is still blocked
-            Queue<BlockedClient> queue = blockedClients.get(listKey);
-            if (queue != null && queue.remove(blockedClient)) {
+            // Check if client is still blocked with proper synchronization
+            boolean wasBlocked = false;
+            synchronized (blockedClients) {
+              Queue<BlockedClient> queue = blockedClients.get(listKey);
+              if (queue != null) {
+                wasBlocked = queue.remove(blockedClient);
+                // Clean up empty queue
+                if (queue.isEmpty()) {
+                  blockedClients.remove(listKey);
+                }
+              }
+            }
+            
+            if (wasBlocked) {
               // Client timed out, send null response
               try {
                 outputStream.write("$-1\r\n".getBytes());
@@ -498,11 +510,6 @@ public class HandleClient implements Runnable {
                 System.out.println("Client " + clientId + " - BLPOP " + listKey + " timed out");
               } catch (IOException e) {
                 System.out.println("Client " + clientId + " - IOException during timeout response: " + e.getMessage());
-              }
-              
-              // Clean up empty queue
-              if (queue.isEmpty()) {
-                blockedClients.remove(listKey);
               }
             }
           } catch (InterruptedException e) {
@@ -654,10 +661,18 @@ public class HandleClient implements Runnable {
   
   private void handleXadd(List<String> command, OutputStream outputStream) throws IOException {
     // XADD stream_key entry_id field1 value1 [field2 value2 ...]
-    // Minimum: XADD stream_key entry_id field1 value1 (4 arguments)
+    // Minimum: XADD stream_key entry_id field1 value1 (5 arguments)
     if (command.size() >= 5 && (command.size() % 2) == 1) {
       String streamKey = command.get(1);
       String entryId = command.get(2);
+      
+      // Validate entry ID format and value
+      String validationError = validateEntryId(entryId, streamKey);
+      if (validationError != null) {
+        outputStream.write(validationError.getBytes());
+        System.out.println("Client " + clientId + " - XADD " + streamKey + " validation error: " + entryId);
+        return;
+      }
       
       // Parse field-value pairs
       Map<String, String> fields = new ConcurrentHashMap<>();
@@ -695,6 +710,58 @@ public class HandleClient implements Runnable {
     }
   }
   
+  private String validateEntryId(String entryId, String streamKey) {
+    // Parse the entry ID (format: milliseconds-sequence)
+    String[] parts = entryId.split("-");
+    if (parts.length != 2) {
+      return "-ERR Invalid stream ID specified as stream command argument\r\n";
+    }
+    
+    long milliseconds;
+    long sequence;
+    try {
+      milliseconds = Long.parseLong(parts[0]);
+      sequence = Long.parseLong(parts[1]);
+    } catch (NumberFormatException e) {
+      return "-ERR Invalid stream ID specified as stream command argument\r\n";
+    }
+    
+    // Check if ID is greater than 0-0
+    if (milliseconds == 0 && sequence == 0) {
+      return "-ERR The ID specified in XADD must be greater than 0-0\r\n";
+    }
+    
+    // Get the stream to check the last entry
+    List<StreamEntry> stream = streams.get(streamKey);
+    if (stream != null && !stream.isEmpty()) {
+      synchronized (stream) {
+        if (!stream.isEmpty()) {
+          // Get the last entry ID
+          StreamEntry lastEntry = stream.get(stream.size() - 1);
+          String lastId = lastEntry.id;
+          String[] lastParts = lastId.split("-");
+          
+          if (lastParts.length == 2) {
+            try {
+              long lastMilliseconds = Long.parseLong(lastParts[0]);
+              long lastSequence = Long.parseLong(lastParts[1]);
+              
+              // Check if new ID is greater than last ID
+              if (milliseconds < lastMilliseconds || 
+                  (milliseconds == lastMilliseconds && sequence <= lastSequence)) {
+                return "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
+              }
+            } catch (NumberFormatException e) {
+              // If we can't parse the last entry ID, allow the new entry
+            }
+          }
+        }
+      }
+    }
+    
+    return null; // No validation error
+  }
+  
   private int convertNegativeIndex(int index, int listSize) {
     if (index < 0) {
       // Convert negative index to positive: -1 becomes listSize-1, -2 becomes listSize-2, etc.
@@ -713,9 +780,40 @@ public class HandleClient implements Runnable {
     System.out.println("Client " + clientId + " - Sent error: unknown command " + commandName);
   }
   
+  private String getQueueOrder(Queue<BlockedClient> queue) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("[");
+    boolean first = true;
+    for (BlockedClient client : queue) {
+      if (!first) {
+        sb.append(", ");
+      }
+      sb.append(client.clientId);
+      first = false;
+    }
+    sb.append("]");
+    return sb.toString();
+  }
+  
   private void notifyBlockedClients(String listKey) {
-    Queue<BlockedClient> clientQueue = blockedClients.get(listKey);
-    if (clientQueue == null || clientQueue.isEmpty()) {
+    BlockedClient blockedClient = null;
+    
+    // Get the first blocked client with proper synchronization
+    synchronized (blockedClients) {
+      Queue<BlockedClient> clientQueue = blockedClients.get(listKey);
+      if (clientQueue == null || clientQueue.isEmpty()) {
+        return;
+      }
+      blockedClient = clientQueue.poll();
+      System.out.println("Notifying blocked client " + blockedClient.clientId + " for list " + listKey + ", remaining queue size: " + clientQueue.size());
+      
+      // Clean up empty queue
+      if (clientQueue.isEmpty()) {
+        blockedClients.remove(listKey);
+      }
+    }
+    
+    if (blockedClient == null) {
       return;
     }
     
@@ -725,42 +823,33 @@ public class HandleClient implements Runnable {
       return;
     }
     
-    // Notify the first (longest waiting) blocked client
-    BlockedClient blockedClient = clientQueue.poll();
-    if (blockedClient != null) {
-      synchronized (list) {
-        if (!list.isEmpty()) {
-          String element = list.remove(0);
+    synchronized (list) {
+      if (!list.isEmpty()) {
+        String element = list.remove(0);
+        
+        try {
+          // Send response array [listKey, element]
+          StringBuilder response = new StringBuilder();
+          response.append("*2\r\n");
+          response.append("$").append(listKey.length()).append("\r\n").append(listKey).append("\r\n");
+          response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
           
-          try {
-            // Send response array [listKey, element]
-            StringBuilder response = new StringBuilder();
-            response.append("*2\r\n");
-            response.append("$").append(listKey.length()).append("\r\n").append(listKey).append("\r\n");
-            response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
-            
-            blockedClient.outputStream.write(response.toString().getBytes());
-            blockedClient.outputStream.flush();
-            
-            System.out.println("Client " + blockedClient.clientId + " - BLPOP " + listKey + " unblocked with ['" + listKey + "', '" + element + "'], remaining: " + list.size());
-            
-            // Clean up empty list
-            if (list.isEmpty()) {
-              lists.remove(listKey);
-              System.out.println("Client " + blockedClient.clientId + " - Removed empty list: " + listKey);
-            }
-            
-          } catch (IOException e) {
-            System.out.println("Client " + blockedClient.clientId + " - IOException during BLPOP response: " + e.getMessage());
-            // Put the element back at the beginning of the list
-            list.add(0, element);
+          blockedClient.outputStream.write(response.toString().getBytes());
+          blockedClient.outputStream.flush();
+          
+          System.out.println("Client " + blockedClient.clientId + " - BLPOP " + listKey + " unblocked with ['" + listKey + "', '" + element + "'], remaining: " + list.size());
+          
+          // Clean up empty list
+          if (list.isEmpty()) {
+            lists.remove(listKey);
+            System.out.println("Client " + blockedClient.clientId + " - Removed empty list: " + listKey);
           }
+          
+        } catch (IOException e) {
+          System.out.println("Client " + blockedClient.clientId + " - IOException during BLPOP response: " + e.getMessage());
+          // Put the element back at the beginning of the list
+          list.add(0, element);
         }
-      }
-      
-      // Clean up empty queue
-      if (clientQueue.isEmpty()) {
-        blockedClients.remove(listKey);
       }
     }
   }
