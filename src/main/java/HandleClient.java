@@ -766,6 +766,16 @@ public class HandleClient implements Runnable {
   }
   
   private String generateEntryId(String entryId, String streamKey) {
+    // Check if the entire entry ID is "*" (auto-generate both time and sequence)
+    if (entryId.equals("*")) {
+      long currentTimeMs = System.currentTimeMillis();
+      long sequence = getNextSequenceNumber(currentTimeMs, streamKey);
+      
+      String generatedId = currentTimeMs + "-" + sequence;
+      System.out.println("Client " + clientId + " - Generated entry ID: " + entryId + " -> " + generatedId);
+      return generatedId;
+    }
+    
     // Check if sequence number needs to be auto-generated
     String[] parts = entryId.split("-");
     if (parts.length != 2) {
