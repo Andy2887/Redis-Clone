@@ -56,7 +56,7 @@ public class HandleClient implements Runnable {
         
         // Parse RESP array command
         if (line.startsWith("*")) {
-          List<String> command = parseRESPArray(reader, line);
+          List<String> command = RESPProtocol.parseRESPArray(reader, line);
           if (command != null && !command.isEmpty()) {
             System.out.println("Client " + clientId + " - Parsed command: " + command);
             handleCommand(command, outputStream);
@@ -79,31 +79,6 @@ public class HandleClient implements Runnable {
     }
   }
   
-  private List<String> parseRESPArray(BufferedReader reader, String arrayLine) throws IOException {
-    // Parse array length from *N\r\n
-    int arrayLength = Integer.parseInt(arrayLine.substring(1));
-    List<String> elements = new ArrayList<>();
-    
-    for (int i = 0; i < arrayLength; i++) {
-      // Read bulk string length line ($N\r\n)
-      String lengthLine = reader.readLine();
-      if (lengthLine == null || !lengthLine.startsWith("$")) {
-        return null;
-      }
-      
-      int stringLength = Integer.parseInt(lengthLine.substring(1));
-      
-      // Read the actual string content
-      String content = reader.readLine();
-      if (content == null) {
-        return null;
-      }
-      
-      elements.add(content);
-    }
-    
-    return elements;
-  }
   
   private boolean isKeyExpired(String key) {
     Long expiryTime = expiryTimes.get(key);
@@ -187,18 +162,18 @@ public class HandleClient implements Runnable {
   }
   
   private void handlePing(OutputStream outputStream) throws IOException {
-    outputStream.write("+PONG\r\n".getBytes());
+    outputStream.write(RESPProtocol.PONG_RESPONSE.getBytes());
     System.out.println("Client " + clientId + " - Sent: +PONG");
   }
   
   private void handleEcho(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() > 1) {
       String echoArg = command.get(1);
-      String response = "$" + echoArg.length() + "\r\n" + echoArg + "\r\n";
+      String response = RESPProtocol.formatBulkString(echoArg);
       outputStream.write(response.getBytes());
       System.out.println("Client " + clientId + " - Sent ECHO response: " + echoArg);
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'echo' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.getArgumentError("echo").getBytes());
       System.out.println("Client " + clientId + " - Sent error: ECHO missing argument");
     }
   }
@@ -219,7 +194,7 @@ public class HandleClient implements Runnable {
               System.out.println("Client " + clientId + " - SET " + key + " with expiry in " + expiryMs + "ms");
               break;
             } catch (NumberFormatException e) {
-              outputStream.write("-ERR invalid expire time in set\r\n".getBytes());
+              outputStream.write(RESPProtocol.formatError("ERR invalid expire time in set").getBytes());
               System.out.println("Client " + clientId + " - Sent error: invalid PX value");
               return;
             }
@@ -238,10 +213,10 @@ public class HandleClient implements Runnable {
         expiryTimes.remove(key);
       }
       
-      outputStream.write("+OK\r\n".getBytes());
+      outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
       System.out.println("Client " + clientId + " - SET " + key + " = " + value);
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'set' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.getArgumentError("set").getBytes());
       System.out.println("Client " + clientId + " - Sent error: SET missing arguments");
     }
   }
@@ -252,22 +227,20 @@ public class HandleClient implements Runnable {
       
       // Check if key has expired
       if (isKeyExpired(key)) {
-        outputStream.write("$-1\r\n".getBytes());
+        outputStream.write(RESPProtocol.NULL_BULK_STRING.getBytes());
         System.out.println("Client " + clientId + " - GET " + key + " = (expired)");
       } else {
         String value = storage.get(key);
+        String response = RESPProtocol.formatBulkString(value);
+        outputStream.write(response.getBytes());
         if (value != null) {
-          String response = "$" + value.length() + "\r\n" + value + "\r\n";
-          outputStream.write(response.getBytes());
           System.out.println("Client " + clientId + " - GET " + key + " = " + value);
         } else {
-          // Return null bulk string for non-existent key
-          outputStream.write("$-1\r\n".getBytes());
           System.out.println("Client " + clientId + " - GET " + key + " = (null)");
         }
       }
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'get' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.getArgumentError("get").getBytes());
       System.out.println("Client " + clientId + " - Sent error: GET missing argument");
     }
   }
@@ -292,7 +265,7 @@ public class HandleClient implements Runnable {
         int elementsAdded = command.size() - 2;
         
         // Return the number of elements in the list as a RESP integer
-        String response = ":" + listSize + "\r\n";
+        String response = RESPProtocol.formatInteger(listSize);
         outputStream.write(response.getBytes());
         System.out.println("Client " + clientId + " - RPUSH " + listKey + " added " + elementsAdded + " elements, list size: " + listSize);
         
@@ -300,7 +273,7 @@ public class HandleClient implements Runnable {
         notifyBlockedClients(listKey);
       }
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'rpush' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.getArgumentError("rpush").getBytes());
       System.out.println("Client " + clientId + " - Sent error: RPUSH missing arguments");
     }
   }
@@ -323,7 +296,7 @@ public class HandleClient implements Runnable {
               int listSize = list.size();
               int elementsAdded = command.size() - 2;
               
-              String response = ":" + listSize + "\r\n";
+              String response = RESPProtocol.formatInteger(listSize);
               outputStream.write(response.getBytes());
               System.out.println("Client " + clientId + " - LPUSH " + listKey + " added " + elementsAdded + " elements, list size: " + listSize);
               
@@ -331,7 +304,7 @@ public class HandleClient implements Runnable {
               notifyBlockedClients(listKey);
           }
       } else {
-          outputStream.write("-ERR wrong number of arguments for 'lpush' command\r\n".getBytes());
+          outputStream.write(RESPProtocol.getArgumentError("lpush").getBytes());
           System.out.println("Client " + clientId + " - Sent error: LPUSH missing arguments");
       }
   }
@@ -346,12 +319,12 @@ public class HandleClient implements Runnable {
         try {
           count = Integer.parseInt(command.get(2));
           if (count < 0) {
-            outputStream.write("-ERR value is out of range, must be positive\r\n".getBytes());
+            outputStream.write(RESPProtocol.getOutOfRangeError().getBytes());
             System.out.println("Client " + clientId + " - Sent error: LPOP negative count");
             return;
           }
         } catch (NumberFormatException e) {
-          outputStream.write("-ERR value is not an integer or out of range\r\n".getBytes());
+          outputStream.write(RESPProtocol.getInvalidIntegerError().getBytes());
           System.out.println("Client " + clientId + " - Sent error: LPOP invalid count format");
           return;
         }
@@ -362,11 +335,11 @@ public class HandleClient implements Runnable {
       if (list == null || list.isEmpty()) {
         if (count == 1) {
           // Single element LPOP on empty/non-existent list returns null bulk string
-          outputStream.write("$-1\r\n".getBytes());
+          outputStream.write(RESPProtocol.NULL_BULK_STRING.getBytes());
           System.out.println("Client " + clientId + " - LPOP " + listKey + " (empty/non-existent) -> null");
         } else {
           // Multiple element LPOP on empty/non-existent list returns empty array
-          outputStream.write("*0\r\n".getBytes());
+          outputStream.write(RESPProtocol.EMPTY_ARRAY.getBytes());
           System.out.println("Client " + clientId + " - LPOP " + listKey + " " + count + " (empty/non-existent) -> empty array");
         }
       } else {
@@ -374,11 +347,11 @@ public class HandleClient implements Runnable {
           if (list.isEmpty()) {
             if (count == 1) {
               // Single element LPOP on empty list returns null bulk string
-              outputStream.write("$-1\r\n".getBytes());
+              outputStream.write(RESPProtocol.NULL_BULK_STRING.getBytes());
               System.out.println("Client " + clientId + " - LPOP " + listKey + " (empty) -> null");
             } else {
               // Multiple element LPOP on empty list returns empty array
-              outputStream.write("*0\r\n".getBytes());
+              outputStream.write(RESPProtocol.EMPTY_ARRAY.getBytes());
               System.out.println("Client " + clientId + " - LPOP " + listKey + " " + count + " (empty) -> empty array");
             }
           } else {
@@ -395,20 +368,13 @@ public class HandleClient implements Runnable {
             if (count == 1) {
               // Single element LPOP returns bulk string
               String element = removedElements.get(0);
-              String response = "$" + element.length() + "\r\n" + element + "\r\n";
+              String response = RESPProtocol.formatBulkString(element);
               outputStream.write(response.getBytes());
               System.out.println("Client " + clientId + " - LPOP " + listKey + " -> '" + element + "', remaining: " + list.size());
             } else {
               // Multiple element LPOP returns array
-              StringBuilder response = new StringBuilder();
-              response.append("*").append(removedElements.size()).append("\r\n");
-              
-              for (String element : removedElements) {
-                response.append("$").append(element.length()).append("\r\n");
-                response.append(element).append("\r\n");
-              }
-              
-              outputStream.write(response.toString().getBytes());
+              String response = RESPProtocol.formatStringArray(removedElements);
+              outputStream.write(response.getBytes());
               System.out.println("Client " + clientId + " - LPOP " + listKey + " " + count + " -> " + removedElements.size() + " elements: " + removedElements + ", remaining: " + list.size());
             }
             
@@ -421,7 +387,7 @@ public class HandleClient implements Runnable {
         }
       }
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'lpop' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.getArgumentError("lpop").getBytes());
       System.out.println("Client " + clientId + " - Sent error: LPOP missing argument");
     }
   }
@@ -436,12 +402,12 @@ public class HandleClient implements Runnable {
       try {
         timeoutSeconds = Double.parseDouble(command.get(2));
         if (timeoutSeconds < 0) {
-          outputStream.write("-ERR timeout is negative\r\n".getBytes());
+          outputStream.write(RESPProtocol.formatError("ERR timeout is negative").getBytes());
           System.out.println("Client " + clientId + " - Sent error: BLPOP negative timeout");
           return;
         }
       } catch (NumberFormatException e) {
-        outputStream.write("-ERR timeout is not a float or out of range\r\n".getBytes());
+        outputStream.write(RESPProtocol.formatError("ERR timeout is not a float or out of range").getBytes());
         System.out.println("Client " + clientId + " - Sent error: BLPOP invalid timeout format");
         return;
       }
@@ -461,12 +427,8 @@ public class HandleClient implements Runnable {
           String element = list.remove(0);
           
           // Return array with [listKey, element]
-          StringBuilder response = new StringBuilder();
-          response.append("*2\r\n");
-          response.append("$").append(listKey.length()).append("\r\n").append(listKey).append("\r\n");
-          response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
-          
-          outputStream.write(response.toString().getBytes());
+          String response = RESPProtocol.formatKeyValueArray(listKey, element);
+          outputStream.write(response.getBytes());
           System.out.println("Client " + clientId + " - BLPOP " + listKey + " -> immediate ['" + listKey + "', '" + element + "'], remaining: " + list.size());
           
           // Clean up empty list
@@ -511,7 +473,7 @@ public class HandleClient implements Runnable {
             if (wasBlocked) {
               // Client timed out, send null response
               try {
-                outputStream.write("$-1\r\n".getBytes());
+                outputStream.write(RESPProtocol.NULL_BULK_STRING.getBytes());
                 outputStream.flush();
                 System.out.println("Client " + clientId + " - BLPOP " + listKey + " timed out");
               } catch (IOException e) {
@@ -525,7 +487,7 @@ public class HandleClient implements Runnable {
       }
       
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'blpop' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.getArgumentError("blpop").getBytes());
       System.out.println("Client " + clientId + " - Sent error: BLPOP missing arguments");
     }
   }
@@ -536,57 +498,53 @@ public class HandleClient implements Runnable {
       try {
         int startIndex = Integer.parseInt(command.get(2));
         int endIndex = Integer.parseInt(command.get(3));
-        
+
         List<String> list = lists.get(listKey);
-        
+
         // If list doesn't exist, return empty array
         if (list == null) {
-          outputStream.write("*0\r\n".getBytes());
+          outputStream.write(RESPProtocol.EMPTY_ARRAY.getBytes());
           System.out.println("Client " + clientId + " - LRANGE " + listKey + " (non-existent) -> empty array");
         } else {
           synchronized (list) {
             int listSize = list.size();
-            
+
             // Convert negative indexes to positive indexes
             int actualStartIndex = convertNegativeIndex(startIndex, listSize);
             int actualEndIndex = convertNegativeIndex(endIndex, listSize);
-            
+
             System.out.println("Client " + clientId + " - LRANGE " + listKey + " original[" + startIndex + ":" + endIndex + "] -> actual[" + actualStartIndex + ":" + actualEndIndex + "], list size: " + listSize);
-            
+
             // Handle edge cases
             if (actualStartIndex >= listSize || actualStartIndex > actualEndIndex || actualEndIndex < 0) {
               // Start index out of bounds or start > end or end < 0 -> empty array
-              outputStream.write("*0\r\n".getBytes());
+              outputStream.write(RESPProtocol.EMPTY_ARRAY.getBytes());
               System.out.println("Client " + clientId + " - LRANGE " + listKey + " -> empty array (out of bounds)");
             } else {
               // Ensure indexes are within bounds
               actualStartIndex = Math.max(0, actualStartIndex);
               actualEndIndex = Math.min(actualEndIndex, listSize - 1);
-              
+
               // Calculate number of elements to return
               int numElements = actualEndIndex - actualStartIndex + 1;
-              
-              // Build RESP array response
-              StringBuilder response = new StringBuilder();
-              response.append("*").append(numElements).append("\r\n");
-              
+
+              // Build RESP array response using RESPProtocol
+              List<String> elements = new ArrayList<>();
               for (int i = actualStartIndex; i <= actualEndIndex; i++) {
-                String element = list.get(i);
-                response.append("$").append(element.length()).append("\r\n");
-                response.append(element).append("\r\n");
+                elements.add(list.get(i));
               }
-              
-              outputStream.write(response.toString().getBytes());
+              String response = RESPProtocol.formatStringArray(elements);
+              outputStream.write(response.getBytes());
               System.out.println("Client " + clientId + " - LRANGE " + listKey + " [" + actualStartIndex + ":" + actualEndIndex + "] -> " + numElements + " elements");
             }
           }
         }
       } catch (NumberFormatException e) {
-        outputStream.write("-ERR value is not an integer or out of range\r\n".getBytes());
+        outputStream.write(RESPProtocol.formatError("ERR value is not an integer or out of range").getBytes());
         System.out.println("Client " + clientId + " - Sent error: LRANGE invalid index format");
       }
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'lrange' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'lrange' command").getBytes());
       System.out.println("Client " + clientId + " - Sent error: LRANGE missing arguments");
     }
   }
@@ -594,9 +552,9 @@ public class HandleClient implements Runnable {
   private void handleLlen(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 2) {
       String listKey = command.get(1);
-      
+
       List<String> list = lists.get(listKey);
-      
+
       int listLength;
       if (list == null) {
         // Non-existent list has length 0
@@ -608,12 +566,12 @@ public class HandleClient implements Runnable {
           System.out.println("Client " + clientId + " - LLEN " + listKey + " -> " + listLength);
         }
       }
-      
-      // Return the length as a RESP integer
-      String response = ":" + listLength + "\r\n";
+
+      // Return the length as a RESP integer using RESPProtocol
+      String response = RESPProtocol.formatInteger(listLength);
       outputStream.write(response.getBytes());
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'llen' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'llen' command").getBytes());
       System.out.println("Client " + clientId + " - Sent error: LLEN missing argument");
     }
   }
@@ -621,43 +579,43 @@ public class HandleClient implements Runnable {
   private void handleType(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 2) {
       String key = command.get(1);
-      
+
       // Check if key has expired first
       if (isKeyExpired(key)) {
         // Key has expired, treat as non-existent
-        outputStream.write("+none\r\n".getBytes());
+        outputStream.write(RESPProtocol.formatSimpleString("none").getBytes());
         System.out.println("Client " + clientId + " - TYPE " + key + " -> none (expired)");
         return;
       }
-      
+
       // Check if it's a string type (stored in the main storage map)
       if (storage.containsKey(key)) {
-        outputStream.write("+string\r\n".getBytes());
+        outputStream.write(RESPProtocol.formatSimpleString("string").getBytes());
         System.out.println("Client " + clientId + " - TYPE " + key + " -> string");
         return;
       }
-      
+
       // Check if it's a list type
       List<String> list = lists.get(key);
       if (list != null && !list.isEmpty()) {
-        outputStream.write("+list\r\n".getBytes());
+        outputStream.write(RESPProtocol.formatSimpleString("list").getBytes());
         System.out.println("Client " + clientId + " - TYPE " + key + " -> list");
         return;
       }
-      
+
       // Check if it's a stream type
       List<StreamEntry> stream = streams.get(key);
       if (stream != null && !stream.isEmpty()) {
-        outputStream.write("+stream\r\n".getBytes());
+        outputStream.write(RESPProtocol.formatSimpleString("stream").getBytes());
         System.out.println("Client " + clientId + " - TYPE " + key + " -> stream");
         return;
       }
-      
+
       // Key doesn't exist
-      outputStream.write("+none\r\n".getBytes());
+      outputStream.write(RESPProtocol.formatSimpleString("none").getBytes());
       System.out.println("Client " + clientId + " - TYPE " + key + " -> none");
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'type' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'type' command").getBytes());
       System.out.println("Client " + clientId + " - Sent error: TYPE missing argument");
     }
   }
@@ -701,16 +659,16 @@ public class HandleClient implements Runnable {
       }
       
       // Return the entry ID as a bulk string
-      String response = "$" + actualEntryId.length() + "\r\n" + actualEntryId + "\r\n";
+      String response = RESPProtocol.formatBulkString(actualEntryId);
       outputStream.write(response.getBytes());
       System.out.println("Client " + clientId + " - XADD " + streamKey + " returned entry ID: " + actualEntryId);
       
     } else {
       if (command.size() < 5) {
-        outputStream.write("-ERR wrong number of arguments for 'xadd' command\r\n".getBytes());
+        outputStream.write(RESPProtocol.getArgumentError("xadd").getBytes());
         System.out.println("Client " + clientId + " - Sent error: XADD missing arguments");
       } else {
-        outputStream.write("-ERR wrong number of arguments for 'xadd' command\r\n".getBytes());
+        outputStream.write(RESPProtocol.getArgumentError("xadd").getBytes());
         System.out.println("Client " + clientId + " - Sent error: XADD odd number of field-value pairs");
       }
     }
@@ -722,62 +680,34 @@ public class HandleClient implements Runnable {
       String streamKey = command.get(1);
       String startId = command.get(2);
       String endId = command.get(3);
-      
+
       // Get the stream
       List<StreamEntry> stream = streams.get(streamKey);
-      
+
       if (stream == null || stream.isEmpty()) {
         // Stream doesn't exist or is empty, return empty array
-        outputStream.write("*0\r\n".getBytes());
+        outputStream.write(RESPProtocol.EMPTY_ARRAY.getBytes());
         System.out.println("Client " + clientId + " - XRANGE " + streamKey + " (empty/non-existent) -> empty array");
         return;
       }
-      
+
       synchronized (stream) {
         // Filter entries based on start and end IDs
         List<StreamEntry> matchingEntries = new ArrayList<>();
-        
+
         for (StreamEntry entry : stream) {
           if (isEntryInRange(entry.id, startId, endId)) {
             matchingEntries.add(entry);
           }
         }
-        
-        // Build RESP array response
-        StringBuilder response = new StringBuilder();
-        response.append("*").append(matchingEntries.size()).append("\r\n");
-        
-        for (StreamEntry entry : matchingEntries) {
-          // Each entry is an array with 2 elements: [id, fields_array]
-          response.append("*2\r\n");
-          
-          // Entry ID as bulk string
-          response.append("$").append(entry.id.length()).append("\r\n");
-          response.append(entry.id).append("\r\n");
-          
-          // Fields array
-          response.append("*").append(entry.fields.size() * 2).append("\r\n");
-          
-          // Add field-value pairs (preserve insertion order)
-          for (Map.Entry<String, String> fieldEntry : entry.fields.entrySet()) {
-            String fieldName = fieldEntry.getKey();
-            String fieldValue = fieldEntry.getValue();
-            
-            // Field name
-            response.append("$").append(fieldName.length()).append("\r\n");
-            response.append(fieldName).append("\r\n");
-            
-            // Field value
-            response.append("$").append(fieldValue.length()).append("\r\n");
-            response.append(fieldValue).append("\r\n");
-          }
-        }
-        
-        outputStream.write(response.toString().getBytes());
+
+        // Build RESP array response using RESPProtocol
+        String response = RESPProtocol.formatStreamEntryArray(matchingEntries);
+        outputStream.write(response.getBytes());
         System.out.println("Client " + clientId + " - XRANGE " + streamKey + " [" + startId + ":" + endId + "] -> " + matchingEntries.size() + " entries");
       }
     } else {
-      outputStream.write("-ERR wrong number of arguments for 'xrange' command\r\n".getBytes());
+      outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xrange' command").getBytes());
       System.out.println("Client " + clientId + " - Sent error: XRANGE missing arguments");
     }
   }
@@ -786,7 +716,7 @@ public class HandleClient implements Runnable {
     // Parse the entry ID (format: milliseconds-sequence)
     String[] parts = entryId.split("-");
     if (parts.length != 2) {
-      return "-ERR Invalid stream ID specified as stream command argument\r\n";
+      return RESPProtocol.formatError("ERR Invalid stream ID specified as stream command argument");
     }
     
     long milliseconds;
@@ -795,12 +725,12 @@ public class HandleClient implements Runnable {
       milliseconds = Long.parseLong(parts[0]);
       sequence = Long.parseLong(parts[1]);
     } catch (NumberFormatException e) {
-      return "-ERR Invalid stream ID specified as stream command argument\r\n";
+      return RESPProtocol.formatError("ERR Invalid stream ID specified as stream command argument");
     }
     
     // Check if ID is greater than 0-0
     if (milliseconds == 0 && sequence == 0) {
-      return "-ERR The ID specified in XADD must be greater than 0-0\r\n";
+      return RESPProtocol.formatError("ERR The ID specified in XADD must be greater than 0-0");
     }
     
     // Get the stream to check the last entry
@@ -821,7 +751,7 @@ public class HandleClient implements Runnable {
               // Check if new ID is greater than last ID
               if (milliseconds < lastMilliseconds || 
                   (milliseconds == lastMilliseconds && sequence <= lastSequence)) {
-                return "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
+                return RESPProtocol.formatError("ERR The ID specified in XADD is equal or smaller than the target stream top item");
               }
             } catch (NumberFormatException e) {
               // If we can't parse the last entry ID, allow the new entry
@@ -977,7 +907,7 @@ public class HandleClient implements Runnable {
   }
   
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
-    String errorMsg = "-ERR unknown command '" + commandName + "'\r\n";
+    String errorMsg = RESPProtocol.formatError("ERR unknown command '" + commandName + "'");
     outputStream.write(errorMsg.getBytes());
     System.out.println("Client " + clientId + " - Sent error: unknown command " + commandName);
   }
@@ -1024,13 +954,10 @@ public class HandleClient implements Runnable {
       String element = list.remove(0);
       
       try {
-        // Send response array [listKey, element]
-        StringBuilder response = new StringBuilder();
-        response.append("*2\r\n");
-        response.append("$").append(listKey.length()).append("\r\n").append(listKey).append("\r\n");
-        response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
+        // Send response array [listKey, element] using RESPProtocol
+        String response = RESPProtocol.formatKeyValueArray(listKey, element);
         
-        blockedClient.outputStream.write(response.toString().getBytes());
+        blockedClient.outputStream.write(response.getBytes());
         blockedClient.outputStream.flush();
         
         System.out.println("Client " + blockedClient.clientId + " - BLPOP " + listKey + " unblocked with ['" + listKey + "', '" + element + "'], remaining: " + list.size());
