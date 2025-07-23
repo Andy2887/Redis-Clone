@@ -118,6 +118,10 @@ public class HandleClient implements Runnable {
       case "XREAD":
         handleXread(command, outputStream);
         break;
+
+      case "INFO":
+        handleInfo(command, outputStream);
+        break;
         
       default:
         handleUnknownCommand(commandName, outputStream);
@@ -660,6 +664,20 @@ public class HandleClient implements Runnable {
           }).start();
         }
       }
+    }
+  }
+
+  private void handleInfo(List<String> command, OutputStream outputStream) throws IOException {
+    // Only support INFO replication for this stage
+    if (command.size() == 2 && command.get(1).equalsIgnoreCase("replication")) {
+      String info = "role:master\r\n";
+      String response = RESPProtocol.formatBulkString(info);
+      outputStream.write(response.getBytes());
+      System.out.println("Client " + clientId + " - INFO replication -> role:master");
+    } else {
+      // For this stage, respond with error for other usages
+      outputStream.write(RESPProtocol.formatError("ERR only INFO replication is supported").getBytes());
+      System.out.println("Client " + clientId + " - Sent error: INFO only supports replication section");
     }
   }
   
