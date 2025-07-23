@@ -341,25 +341,11 @@ public class HandleClient implements Runnable {
       // List is empty or doesn't exist, need to block the client
       BlockedClient blockedClient = new BlockedClient(clientId, outputStream, listKey, timeoutMs);
       
-      // Try to block the client using ListStorage
+      // Add the client to the blocked queue
       boolean wasBlocked = listStorage.blockClient(listKey, blockedClient);
-      if (!wasBlocked) {
-        // This means elements were added between our check and blocking attempt
-        // Try to pop again
-        poppedElements = listStorage.leftPop(listKey, 1);
-        if (!poppedElements.isEmpty()) {
-          String element = poppedElements.get(0);
-          String response = RESPProtocol.formatKeyValueArray(listKey, element);
-          outputStream.write(response.getBytes());
-          System.out.println("Client " + clientId + " - BLPOP " + listKey + " -> immediate ['" + listKey + "', '" + element + "'], remaining: " + listStorage.length(listKey));
-          return;
-        }
-        // If still no elements, try to block again
-        wasBlocked = listStorage.blockClient(listKey, blockedClient);
-      }
       
       if (wasBlocked) {
-        System.out.println("Client " + clientId + " - BLPOP " + listKey + " blocking (timeout: " + timeoutSeconds + "s), queue size: " + listStorage.getBlockedClientCount(listKey) + ", queue order: " + listStorage.getBlockedClientOrder(listKey));
+        System.out.println("Client " + clientId + " - BLPOP " + listKey + " is blocked (timeout: " + timeoutSeconds + "s), queue size: " + listStorage.getBlockedClientCount(listKey) + ", queue order: " + listStorage.getBlockedClientOrder(listKey));
         
         // Start timeout monitoring in a separate thread
         if (timeoutMs > 0) {
@@ -370,7 +356,7 @@ public class HandleClient implements Runnable {
             try {
               Thread.sleep(timeoutMs);
               
-              // Check if client is still blocked and remove it
+              // Remove client from blocked queue; true if client was still blocked (not yet unblocked
               boolean wasStillBlocked = listStorage.unblockClient(listKey, finalBlockedClient);
               
               if (wasStillBlocked) {
