@@ -6,6 +6,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import StorageManager.*;
 
 public class HandleClient implements Runnable {
@@ -15,8 +16,7 @@ public class HandleClient implements Runnable {
   private static final String MASTER_REPLID = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
   private static final String MASTER_REPL_OFFSET = "0";
   // Track the replica's OutputStream and connection state
-  private static OutputStream replicaOutputStream = null;
-  private static boolean replicaHandshakeComplete = false;
+  private static final List<OutputStream> replicaOutputStreams = new CopyOnWriteArrayList<>();
   
   // Storage managers for different data types
   private static final StringStorage stringStorage = new StringStorage();
@@ -735,10 +735,9 @@ public class HandleClient implements Runnable {
       outputStream.flush();
       System.out.println("Client " + clientId + " - Sent empty RDB file (" + emptyRdb.length + " bytes)");
 
-      // Mark this connection as the replica connection
+      // Add this replica's OutputStream to the list
       synchronized (HandleClient.class) {
-        replicaOutputStream = outputStream;
-        replicaHandshakeComplete = true;
+        replicaOutputStreams.add(outputStream);
       }
   }
 
@@ -784,20 +783,22 @@ public class HandleClient implements Runnable {
   // Propagate write command to replica if connected
   private void propagateToReplica(List<String> command) {
     synchronized (HandleClient.class) {
-      if (replicaOutputStream != null && replicaHandshakeComplete) {
-        try {
-          // Format as RESP array
-          StringBuilder sb = new StringBuilder();
-          sb.append("*").append(command.size()).append("\r\n");
-          for (String arg : command) {
-            sb.append("$").append(arg.length()).append("\r\n").append(arg).append("\r\n");
-          }
-          replicaOutputStream.write(sb.toString().getBytes());
-          replicaOutputStream.flush();
-          System.out.println("Propagated to replica: " + command);
-        } catch (IOException e) {
-          System.out.println("Failed to propagate to replica: " + e.getMessage());
+      if (!replicaOutputStreams.isEmpty()) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("*").append(command.size()).append("\r\n");
+        for (String arg : command) {
+          sb.append("$").append(arg.length()).append("\r\n").append(arg).append("\r\n");
         }
+        byte[] resp = sb.toString().getBytes();
+        for (OutputStream out : replicaOutputStreams) {
+          try {
+            out.write(resp);
+            out.flush();
+          } catch (IOException e) {
+            System.out.println("Failed to propagate to replica: " + e.getMessage());
+          }
+        }
+        System.out.println("Propagated to replicas: " + command);
       }
     }
   }
