@@ -17,18 +17,50 @@ public class Main {
     parseReplicaOfFlag(args);
     int clientCounter = 0;
     
-    // If replica, connect to master and send PING
+    // If replica, connect to master and send PING, then REPLCONF commands
     if ("slave".equals(serverRole) && masterHost != null && masterPort > 0) {
       new Thread(() -> {
         try (Socket masterSocket = new Socket(masterHost, masterPort)) {
           OutputStream out = masterSocket.getOutputStream();
+          java.io.InputStream in = masterSocket.getInputStream();
+
           // Send RESP array: *1\r\n$4\r\nPING\r\n
           String pingResp = "*1\r\n$4\r\nPING\r\n";
           out.write(pingResp.getBytes());
           out.flush();
-          System.out.println("Replica sent PING to master at " + masterHost + ":" + masterPort);
+
+          // Wait for +PONG or +OK from master
+          byte[] buffer = new byte[1024];
+          int len = in.read(buffer);
+          String response = new String(buffer, 0, len);
+          System.out.println("Replica received from master: " + response.trim());
+
+          // Send REPLCONF listening-port <PORT>
+          String portStr = String.valueOf(port);
+          String replconfListeningPort =
+              "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$" + portStr.length() + "\r\n" + portStr + "\r\n";
+          out.write(replconfListeningPort.getBytes());
+          out.flush();
+
+          // Wait for +OK from master
+          len = in.read(buffer);
+          response = new String(buffer, 0, len);
+          System.out.println("Replica received from master: " + response.trim());
+
+          // Send REPLCONF capa psync2
+          String replconfCapa =
+              "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+          out.write(replconfCapa.getBytes());
+          out.flush();
+
+          // Wait for +OK from master
+          len = in.read(buffer);
+          response = new String(buffer, 0, len);
+          System.out.println("Replica received from master: " + response.trim());
+
+          System.out.println("Replica handshake with master complete.");
         } catch (Exception e) {
-          System.out.println("Failed to connect/send PING to master: " + e.getMessage());
+          System.out.println("Failed to connect/send handshake to master: " + e.getMessage());
         }
       }).start();
     }
