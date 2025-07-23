@@ -126,6 +126,10 @@ public class HandleClient implements Runnable {
       case "INFO":
         handleInfo(command, outputStream);
         break;
+
+      case "REPLCONF":
+        handleReplconf(command, outputStream);
+        break;
         
       default:
         handleUnknownCommand(commandName, outputStream);
@@ -686,6 +690,11 @@ public class HandleClient implements Runnable {
       outputStream.write(RESPProtocol.formatError("ERR only INFO replication is supported").getBytes());
       System.out.println("Client " + clientId + " - Sent error: INFO only supports replication section");
     }
+  }
+
+  private void handleReplconf(List<String> command, OutputStream outputStream) throws IOException {
+    outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
+    System.out.println("Client " + clientId + " - REPLCONF received, responded with +OK");
   }
   
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
