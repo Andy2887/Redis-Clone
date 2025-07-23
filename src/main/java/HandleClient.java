@@ -532,54 +532,148 @@ public class HandleClient implements Runnable {
   }
   
   private void handleXread(List<String> command, OutputStream outputStream) throws IOException {
-    // XREAD streams stream_key1 [stream_key2 ...] entry_id1 [entry_id2 ...]
+    // XREAD [BLOCK timeout] streams stream_key1 [stream_key2 ...] entry_id1 [entry_id2 ...]
     // Minimum: XREAD streams stream_key entry_id (4 arguments)
-    if (command.size() >= 4 && command.get(1).equalsIgnoreCase("streams")) {
-      
-      // Calculate number of streams
-      // Format: XREAD streams key1 key2 ... keyN id1 id2 ... idN
-      // Total arguments after "streams" should be even (N keys + N ids)
-      int argsAfterStreams = command.size() - 2; // Subtract "XREAD" and "streams"
-      if (argsAfterStreams % 2 != 0) {
-        outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xread' command").getBytes());
-        System.out.println("Client " + clientId + " - Sent error: XREAD uneven number of stream keys and IDs");
-        return;
+    // With BLOCK: XREAD BLOCK timeout streams stream_key entry_id (6 arguments)
+    
+    int streamsIndex = -1;
+    long blockTimeoutMs = -1; // -1 means non-blocking
+    
+    // Parse optional BLOCK parameter
+    for (int i = 1; i < command.size(); i++) {
+      if (command.get(i).equalsIgnoreCase("block")) {
+        if (i + 1 >= command.size()) {
+          outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xread' command").getBytes());
+          System.out.println("Client " + clientId + " - Sent error: XREAD BLOCK missing timeout");
+          return;
+        }
+        try {
+          double timeoutSeconds = Double.parseDouble(command.get(i + 1));
+          if (timeoutSeconds < 0) {
+            outputStream.write(RESPProtocol.formatError("ERR timeout is negative").getBytes());
+            System.out.println("Client " + clientId + " - Sent error: XREAD BLOCK negative timeout");
+            return;
+          }
+          blockTimeoutMs = timeoutSeconds == 0 ? 0 : (long) (timeoutSeconds * 1000);
+          i++; // Skip the timeout value
+        } catch (NumberFormatException e) {
+          outputStream.write(RESPProtocol.formatError("ERR timeout is not a float or out of range").getBytes());
+          System.out.println("Client " + clientId + " - Sent error: XREAD BLOCK invalid timeout format");
+          return;
+        }
+      } else if (command.get(i).equalsIgnoreCase("streams")) {
+        streamsIndex = i;
+        break;
       }
+    }
+    
+    final long finalBlockTimeoutMs = blockTimeoutMs;
+    
+    if (streamsIndex == -1) {
+      outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xread' command").getBytes());
+      System.out.println("Client " + clientId + " - Sent error: XREAD missing 'streams' keyword");
+      return;
+    }
+    
+    // Calculate number of streams
+    // Format: ... streams key1 key2 ... keyN id1 id2 ... idN
+    // Total arguments after "streams" should be even (N keys + N ids)
+    int argsAfterStreams = command.size() - streamsIndex - 1; // Subtract everything before and including "streams"
+    if (argsAfterStreams % 2 != 0 || argsAfterStreams < 2) {
+      outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xread' command").getBytes());
+      System.out.println("Client " + clientId + " - Sent error: XREAD uneven number of stream keys and IDs");
+      return;
+    }
+    
+    int numStreams = argsAfterStreams / 2;
+    
+    // Extract stream keys and IDs
+    List<String> streamKeys = new ArrayList<>();
+    List<String> afterIds = new ArrayList<>();
+    
+    for (int i = 0; i < numStreams; i++) {
+      streamKeys.add(command.get(streamsIndex + 1 + i)); // Stream keys start after "streams"
+      afterIds.add(command.get(streamsIndex + 1 + numStreams + i)); // IDs start after all stream keys
+    }
+    
+    // Query each stream and collect results
+    Map<String, List<StreamEntry>> streamResults = new java.util.LinkedHashMap<>();
+    
+    for (int i = 0; i < numStreams; i++) {
+      String streamKey = streamKeys.get(i);
+      String afterId = afterIds.get(i);
       
-      int numStreams = argsAfterStreams / 2;
-      
-      // Extract stream keys and IDs
-      List<String> streamKeys = new ArrayList<>();
-      List<String> afterIds = new ArrayList<>();
-      
-      for (int i = 0; i < numStreams; i++) {
-        streamKeys.add(command.get(2 + i)); // Stream keys start at index 2
-        afterIds.add(command.get(2 + numStreams + i)); // IDs start after all stream keys
-      }
-      
-      // Query each stream and collect results
-      Map<String, List<StreamEntry>> streamResults = new java.util.LinkedHashMap<>();
-      
-      for (int i = 0; i < numStreams; i++) {
-        String streamKey = streamKeys.get(i);
-        String afterId = afterIds.get(i);
-        
-        // Use StreamStorage to get entries after the specified ID (exclusive)
-        List<StreamEntry> matchingEntries = streamStorage.getEntriesAfter(streamKey, afterId);
-        streamResults.put(streamKey, matchingEntries);
-      }
-      
-      // Build RESP array response using RESPProtocol
+      // Use StreamStorage to get entries after the specified ID (exclusive)
+      List<StreamEntry> matchingEntries = streamStorage.getEntriesAfter(streamKey, afterId);
+      streamResults.put(streamKey, matchingEntries);
+    }
+    
+    // Check if we have any new entries
+    boolean hasNewEntries = streamResults.values().stream().anyMatch(entries -> !entries.isEmpty());
+    
+    if (hasNewEntries || finalBlockTimeoutMs == -1) {
+      // Non-blocking mode or we have entries, send response immediately
       String response = RESPProtocol.formatXreadMultiResponse(streamResults);
       outputStream.write(response.getBytes());
       
-      // Log the result
       int totalEntries = streamResults.values().stream().mapToInt(List::size).sum();
-      System.out.println("Client " + clientId + " - XREAD streams " + streamKeys + " " + afterIds + " -> " + totalEntries + " total entries across " + streamResults.size() + " streams");
+      System.out.println("Client " + clientId + " - XREAD" + (finalBlockTimeoutMs != -1 ? " BLOCK" : "") + " streams " + streamKeys + " " + afterIds + " -> " + totalEntries + " total entries (immediate)");
       
     } else {
-      outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xread' command").getBytes());
-      System.out.println("Client " + clientId + " - Sent error: XREAD missing arguments or invalid format");
+      // Blocking mode and no entries found, block the client
+      Map<String, String> lastIdMap = new java.util.LinkedHashMap<>();
+      for (int i = 0; i < streamKeys.size(); i++) {
+        lastIdMap.put(streamKeys.get(i), afterIds.get(i));
+      }
+      
+      BlockedClient blockedClient = new BlockedClient(clientId, outputStream, streamKeys, lastIdMap, finalBlockTimeoutMs);
+      
+      // Try to block the client
+      boolean wasBlocked = streamStorage.blockClientOnStreams(blockedClient);
+      if (!wasBlocked) {
+        // Entries were added between our check and blocking attempt, try again
+        for (int i = 0; i < numStreams; i++) {
+          String streamKey = streamKeys.get(i);
+          String afterId = afterIds.get(i);
+          List<StreamEntry> matchingEntries = streamStorage.getEntriesAfter(streamKey, afterId);
+          streamResults.put(streamKey, matchingEntries);
+        }
+        
+        String response = RESPProtocol.formatXreadMultiResponse(streamResults);
+        outputStream.write(response.getBytes());
+        
+        int totalEntries = streamResults.values().stream().mapToInt(List::size).sum();
+        System.out.println("Client " + clientId + " - XREAD BLOCK streams " + streamKeys + " " + afterIds + " -> " + totalEntries + " total entries (race condition)");
+      } else {
+        System.out.println("Client " + clientId + " - XREAD BLOCK streams " + streamKeys + " " + afterIds + " blocking (timeout: " + (finalBlockTimeoutMs / 1000.0) + "s)");
+        
+        // Start timeout monitoring in a separate thread
+        if (finalBlockTimeoutMs > 0) {
+          final BlockedClient finalBlockedClient = blockedClient;
+          
+          new Thread(() -> {
+            try {
+              Thread.sleep(finalBlockTimeoutMs);
+              
+              // Check if client is still blocked and remove it
+              boolean wasStillBlocked = streamStorage.unblockClient(finalBlockedClient);
+              
+              if (wasStillBlocked) {
+                // Client timed out, send null response
+                try {
+                  outputStream.write(RESPProtocol.NULL_BULK_STRING.getBytes());
+                  outputStream.flush();
+                  System.out.println("Client " + clientId + " - XREAD BLOCK streams " + streamKeys + " timed out");
+                } catch (IOException e) {
+                  System.out.println("Client " + clientId + " - IOException during XREAD BLOCK timeout response: " + e.getMessage());
+                }
+              }
+            } catch (InterruptedException e) {
+              System.out.println("Client " + clientId + " - XREAD BLOCK timeout thread interrupted");
+            }
+          }).start();
+        }
+      }
     }
   }
   

@@ -40,6 +40,9 @@ public class StreamStorage {
             StreamEntry entry = new StreamEntry(actualEntryId, fields);
             stream.add(entry);
             
+            // Notify blocked clients after adding the entry
+            notifyBlockedClients(key);
+            
             return actualEntryId;
         }
     }
@@ -223,5 +226,124 @@ public class StreamStorage {
      */
     public void clear() {
         streams.clear();
+        blockedClients.clear();
+    }
+    
+    // Blocking operations support
+    private final Map<String, List<BlockedClient>> blockedClients = new ConcurrentHashMap<>();
+    
+    /**
+     * Blocks a client waiting for new entries on any of the specified streams.
+     * 
+     * @param client The blocked client information
+     * @return true if the client was successfully blocked, false if entries are already available
+     */
+    public boolean blockClientOnStreams(BlockedClient client) {
+        if (!client.isStreamOperation) {
+            throw new IllegalArgumentException("Client is not configured for stream operations");
+        }
+        
+        // First check if any of the streams already have new entries
+        for (int i = 0; i < client.streamKeys.size(); i++) {
+            String streamKey = client.streamKeys.get(i);
+            String lastId = client.lastIds.get(streamKey);
+            
+            List<StreamEntry> newEntries = getEntriesAfter(streamKey, lastId);
+            if (!newEntries.isEmpty()) {
+                // There are already new entries, don't block
+                return false;
+            }
+        }
+        
+        // No new entries found, block the client on all streams
+        for (String streamKey : client.streamKeys) {
+            blockedClients.computeIfAbsent(streamKey, k -> new ArrayList<>()).add(client);
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Unblocks a client from all streams it was waiting on.
+     * 
+     * @param client The client to unblock
+     * @return true if the client was found and removed from blocking queues
+     */
+    public boolean unblockClient(BlockedClient client) {
+        boolean wasBlocked = false;
+        
+        if (client.isStreamOperation && client.streamKeys != null) {
+            for (String streamKey : client.streamKeys) {
+                List<BlockedClient> clients = blockedClients.get(streamKey);
+                if (clients != null) {
+                    if (clients.remove(client)) {
+                        wasBlocked = true;
+                    }
+                    if (clients.isEmpty()) {
+                        blockedClients.remove(streamKey);
+                    }
+                }
+            }
+        }
+        
+        return wasBlocked;
+    }
+    
+    /**
+     * Notifies blocked clients when new entries are added to a stream.
+     * This should be called after adding entries to a stream.
+     * 
+     * @param streamKey The stream that received new entries
+     */
+    public void notifyBlockedClients(String streamKey) {
+        List<BlockedClient> clients = blockedClients.get(streamKey);
+        if (clients == null || clients.isEmpty()) {
+            return;
+        }
+        
+        // Create a copy to avoid concurrent modification
+        List<BlockedClient> clientsCopy = new ArrayList<>(clients);
+        
+        for (BlockedClient client : clientsCopy) {
+            // Check if this client has new entries available
+            Map<String, List<StreamEntry>> results = new java.util.LinkedHashMap<>();
+            boolean hasNewEntries = false;
+            
+            for (int i = 0; i < client.streamKeys.size(); i++) {
+                String key = client.streamKeys.get(i);
+                String lastId = client.lastIds.get(key);
+                List<StreamEntry> newEntries = getEntriesAfter(key, lastId);
+                results.put(key, newEntries);
+                if (!newEntries.isEmpty()) {
+                    hasNewEntries = true;
+                }
+            }
+            
+            if (hasNewEntries) {
+                // Unblock this client from all streams
+                unblockClient(client);
+                
+                // Send the response
+                try {
+                    String response = RESPProtocol.formatXreadMultiResponse(results);
+                    client.outputStream.write(response.getBytes());
+                    client.outputStream.flush();
+                    System.out.println("Client " + client.clientId + " - XREAD BLOCK unblocked with new entries");
+                } catch (Exception e) {
+                    System.out.println("Client " + client.clientId + " - IOException during XREAD BLOCK response: " + e.getMessage());
+                }
+            }
+        }
+    }
+    
+    /**
+     * Gets the number of blocked clients waiting on a specific stream.
+     * 
+     * @param streamKey The stream key
+     * @return The number of blocked clients
+     */
+    public int getBlockedClientCount(String streamKey) {
+        List<BlockedClient> clients = blockedClients.get(streamKey);
+        return clients != null ? clients.size() : 0;
     }
 }
