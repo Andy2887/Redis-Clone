@@ -3,6 +3,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 
 public class Main {
+  public static String serverRole = "master";
   public static void main(String[] args) {
     // You can use print statements as follows for debugging, they'll be visible
     // when running tests.
@@ -10,6 +11,7 @@ public class Main {
 
     ServerSocket serverSocket = null;
     int port = getPortFromArgs(args);
+    parseReplicaOfFlag(args);
     int clientCounter = 0;
 
     try {
@@ -28,7 +30,7 @@ public class Main {
           clientCounter++;
 
           // Create a new thread to handle this client
-          Thread clientThread = new Thread(new HandleClient(clientSocket, clientCounter));
+          Thread clientThread = new Thread(new HandleClient(clientSocket, clientCounter, serverRole));
           clientThread.start();
 
           System.out.println("Started thread for client " + clientCounter);
@@ -66,4 +68,14 @@ public class Main {
     }
     return port;
   }
+
+  private static void parseReplicaOfFlag(String[] args) {
+    for (int i = 0; i < args.length; i++) {
+      if ("--replicaof".equals(args[i])) {
+        serverRole = "slave";
+        break;
+      }
+    }
+  }
+
 }

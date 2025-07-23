@@ -11,15 +11,17 @@ import StorageManager.*;
 public class HandleClient implements Runnable {
   private Socket clientSocket;
   private int clientId;
+  private String serverRole;
   
   // Storage managers for different data types
   private static final StringStorage stringStorage = new StringStorage();
   private static final ListStorage listStorage = new ListStorage();
   private static final StreamStorage streamStorage = new StreamStorage();
   
-  public HandleClient(Socket clientSocket, int clientId) {
+  public HandleClient(Socket clientSocket, int clientId, String serverRole) {
     this.clientSocket = clientSocket;
     this.clientId = clientId;
+    this.serverRole = serverRole;
   }
   
   @Override
@@ -668,14 +670,12 @@ public class HandleClient implements Runnable {
   }
 
   private void handleInfo(List<String> command, OutputStream outputStream) throws IOException {
-    // Only support INFO replication for this stage
     if (command.size() == 2 && command.get(1).equalsIgnoreCase("replication")) {
-      String info = "role:master\r\n";
+      String info = "role:" + serverRole + "\r\n";
       String response = RESPProtocol.formatBulkString(info);
       outputStream.write(response.getBytes());
-      System.out.println("Client " + clientId + " - INFO replication -> role:master");
+      System.out.println("Client " + clientId + " - INFO replication -> role:" + serverRole);
     } else {
-      // For this stage, respond with error for other usages
       outputStream.write(RESPProtocol.formatError("ERR only INFO replication is supported").getBytes());
       System.out.println("Client " + clientId + " - Sent error: INFO only supports replication section");
     }
