@@ -135,11 +135,11 @@ src/
 ```
 
 ## 🔮 Future Enhancements
-- Additional Redis commands
 - Persistence support (RDB)
 - Transactions
 - Replication
 - Fix the BLPOP command bug
+- Fix the XREAD BLOCK command bug
 
 ## 📄 License
 
