@@ -130,6 +130,10 @@ public class HandleClient implements Runnable {
       case "REPLCONF":
         handleReplconf(command, outputStream);
         break;
+
+      case "PSYNC":
+        handlePsync(command, outputStream);
+        break;
         
       default:
         handleUnknownCommand(commandName, outputStream);
@@ -696,7 +700,16 @@ public class HandleClient implements Runnable {
     outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
     System.out.println("Client " + clientId + " - REPLCONF received, responded with +OK");
   }
-  
+
+  private void handlePsync(List<String> command, OutputStream outputStream) throws IOException {
+      // Always respond with FULLRESYNC <REPL_ID> 0
+      String replid = MASTER_REPLID;
+      String offset = MASTER_REPL_OFFSET;
+      String response = "+FULLRESYNC " + replid + " " + offset + "\r\n";
+      outputStream.write(response.getBytes());
+      System.out.println("Client " + clientId + " - PSYNC received, responded with: " + response.trim());
+  }
+
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
     String errorMsg = RESPProtocol.formatError("ERR unknown command '" + commandName + "'");
     outputStream.write(errorMsg.getBytes());
