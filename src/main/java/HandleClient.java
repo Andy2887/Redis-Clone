@@ -12,6 +12,8 @@ public class HandleClient implements Runnable {
   private Socket clientSocket;
   private int clientId;
   private String serverRole;
+  private static final String MASTER_REPLID = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+  private static final String MASTER_REPL_OFFSET = "0";
   
   // Storage managers for different data types
   private static final StringStorage stringStorage = new StringStorage();
@@ -671,10 +673,15 @@ public class HandleClient implements Runnable {
 
   private void handleInfo(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() == 2 && command.get(1).equalsIgnoreCase("replication")) {
-      String info = "role:" + serverRole + "\r\n";
-      String response = RESPProtocol.formatBulkString(info);
+      StringBuilder info = new StringBuilder();
+      info.append("role:").append(serverRole).append("\r\n");
+      if ("master".equals(serverRole)) {
+        info.append("master_replid:").append(MASTER_REPLID).append("\r\n");
+        info.append("master_repl_offset:").append(MASTER_REPL_OFFSET).append("\r\n");
+      }
+      String response = RESPProtocol.formatBulkString(info.toString());
       outputStream.write(response.getBytes());
-      System.out.println("Client " + clientId + " - INFO replication -> role:" + serverRole);
+      System.out.println("Client " + clientId + " - INFO replication ->\n" + info);
     } else {
       outputStream.write(RESPProtocol.formatError("ERR only INFO replication is supported").getBytes());
       System.out.println("Client " + clientId + " - Sent error: INFO only supports replication section");
