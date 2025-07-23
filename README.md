@@ -17,11 +17,15 @@ A high-performance, thread-safe Redis server implementation built from scratch i
   - `BLPOP key timeout` - Blocking left pop with timeout support
   - `LRANGE key start stop` - Get a range of elements from a list
   - `LLEN key` - Get the length of a list
+- **Stream Operations**:
+  - `XADD key id field value [field value ...]` - Add entries to a stream
+  - `XRANGE key start end` - Get a range of entries from a stream
+  - `XREAD [BLOCK timeout] streams key [key ...] id [id ...]` - Read new entries from one or more streams, optionally blocking
 
 ### Advanced Features
 - **Replication**: Master-replica support with command propagation and full resynchronization
 - **Expiry Support**: Automatic key expiration with millisecond precision
-- **Blocking Operations**: BLPOP with configurable timeouts and FIFO client ordering
+- **Blocking Operations**: BLPOP and XREAD BLOCK with configurable timeouts and FIFO client ordering
 - **Thread Safety**: Concurrent client handling with proper synchronization
 - **RESP Protocol**: Full Redis Serialization Protocol compliance
 - **Memory Management**: Automatic cleanup of empty data structures
@@ -29,7 +33,7 @@ A high-performance, thread-safe Redis server implementation built from scratch i
 ## 🛠️ Setup and Installation
 
 ### Prerequisites
-- Java 8 or higher
+- Java 8 or higher (Java 23+ recommended)
 - Maven 3.6 or higher
 
 ### Installation
@@ -39,7 +43,6 @@ A high-performance, thread-safe Redis server implementation built from scratch i
    ```bash
    ./run.sh
    ```
-
 
 The server will start on `localhost:6379` by default.
 
@@ -76,6 +79,19 @@ OK
 > BLPOP mylist 10
 1) "mylist"
 2) "first"
+
+# Stream operations
+> XADD mystream * field1 value1
+"1680000000000-0"
+> XRANGE mystream - +
+1) 1) "1680000000000-0"
+   2) 1) "field1"
+      2) "value1"
+> XREAD BLOCK 5 streams mystream 0-0
+1) 1) "mystream"
+   2) 1) 1) "1680000000000-0"
+         2) 1) "field1"
+               2) "value1"
 ```
 
 ## 🪞 Replication
@@ -86,22 +102,26 @@ This server supports Redis master-replica replication:
 ```bash
 ./run.sh --port 6380 --replicaof "localhost 6379"
 ```
+- The replica will connect to the master, perform the handshake, and receive command propagation.
+
 ### Supported Data Types
 - **Strings**: UTF-8 encoded text values
 - **Lists**: Ordered collections of strings with O(1) head/tail operations
+- **Streams**: Append-only log data structure for time-series and messaging
 
 ## 🏗️ Architecture
 
 ### Core Components
 - **Main.java**: Server initialization and client connection handling
 - **HandleClient.java**: Individual client request processing and command execution
-- **BlockedClient.java**: Manages blocking operations and timeout handling
+- **HandleReplica.java**: Handles replica handshake and command propagation from master
+- **StorageManager/**: Contains storage classes for strings, lists, streams, and blocking client management
 
 ### Design Patterns
 - **Multi-threaded Server**: Each client connection runs in its own thread
 - **Command Pattern**: Individual handler methods for each Redis command
-- **Observer Pattern**: Blocked clients are notified when list elements become available
-- **Thread-safe Collections**: ConcurrentHashMap for shared state management
+- **Observer Pattern**: Blocked clients are notified when list or stream elements become available
+- **Thread-safe Collections**: Uses `ConcurrentHashMap` and other thread-safe structures for shared state
 
 ## 🧪 Testing
 
@@ -136,19 +156,27 @@ telnet localhost 6379
 src/
 ├── main/
 │   └── java/
-│       ├── Main.java          # Server entry point
-│       ├── HandleClient.java  # Client request handler
-│       └── BlockedClient.java # Blocking operation support
+│       ├── Main.java             # Server entry point
+│       ├── HandleClient.java     # Client request handler
+│       ├── HandleReplica.java    # Replica handshake and sync logic
+│       └── StorageManager/
+│           ├── BlockedClient.java
+│           ├── ListStorage.java
+│           ├── RESPProtocol.java
+│           ├── StreamEntry.java
+│           ├── StreamIdHelper.java
+│           ├── StreamStorage.java
+│           └── StringStorage.java
 └── test/
-    └── java/                  # Unit tests
+    └── java/                     # Unit tests
 ```
 
 ## 🔮 Future Enhancements
 - Persistence support (RDB)
 - Transactions
-- Replication
-- Fix the BLPOP command bug
-- Fix the XREAD BLOCK command bug
+- Partial resynchronization for replication
+- More advanced stream and blocking features
+- Additional Redis command support
 
 ## 📄 License
 
@@ -156,4 +184,4 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## 🙏 Acknowledgements
 
-This project follows the [Codecrafters tutorial "Build Your Own Redis"](https://codecrafters.io/challenges/redis).
+This project
