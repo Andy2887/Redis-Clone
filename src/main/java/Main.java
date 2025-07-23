@@ -1,9 +1,12 @@
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 
 public class Main {
   public static String serverRole = "master";
+  private static String masterHost = null;
+  private static int masterPort = -1;
   public static void main(String[] args) {
     // You can use print statements as follows for debugging, they'll be visible
     // when running tests.
@@ -13,6 +16,22 @@ public class Main {
     int port = getPortFromArgs(args);
     parseReplicaOfFlag(args);
     int clientCounter = 0;
+    
+    // If replica, connect to master and send PING
+    if ("slave".equals(serverRole) && masterHost != null && masterPort > 0) {
+      new Thread(() -> {
+        try (Socket masterSocket = new Socket(masterHost, masterPort)) {
+          OutputStream out = masterSocket.getOutputStream();
+          // Send RESP array: *1\r\n$4\r\nPING\r\n
+          String pingResp = "*1\r\n$4\r\nPING\r\n";
+          out.write(pingResp.getBytes());
+          out.flush();
+          System.out.println("Replica sent PING to master at " + masterHost + ":" + masterPort);
+        } catch (Exception e) {
+          System.out.println("Failed to connect/send PING to master: " + e.getMessage());
+        }
+      }).start();
+    }
 
     try {
       serverSocket = new ServerSocket(port);
@@ -71,8 +90,17 @@ public class Main {
 
   private static void parseReplicaOfFlag(String[] args) {
     for (int i = 0; i < args.length; i++) {
-      if ("--replicaof".equals(args[i])) {
+      if ("--replicaof".equals(args[i]) && i + 1 < args.length) {
         serverRole = "slave";
+        String[] parts = args[i + 1].split(" ");
+        if (parts.length == 2) {
+          masterHost = parts[0];
+          try {
+            masterPort = Integer.parseInt(parts[1]);
+          } catch (NumberFormatException e) {
+            masterPort = -1;
+          }
+        }
         break;
       }
     }
