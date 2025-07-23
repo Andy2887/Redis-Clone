@@ -19,6 +19,7 @@ A high-performance, thread-safe Redis server implementation built from scratch i
   - `LLEN key` - Get the length of a list
 
 ### Advanced Features
+- **Replication**: Master-replica support with command propagation and full resynchronization
 - **Expiry Support**: Automatic key expiration with millisecond precision
 - **Blocking Operations**: BLPOP with configurable timeouts and FIFO client ordering
 - **Thread Safety**: Concurrent client handling with proper synchronization
@@ -76,6 +77,14 @@ OK
 1) "mylist"
 2) "first"
 ```
+
+## 🪞 Replication
+
+This server supports Redis master-replica replication:
+
+- Start a replica with:
+  ```bash
+  ./run.sh --port 6380 --replicaof "localhost 6379"
 
 ### Supported Data Types
 - **Strings**: UTF-8 encoded text values
