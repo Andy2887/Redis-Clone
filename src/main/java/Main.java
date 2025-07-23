@@ -58,6 +58,16 @@ public class Main {
           response = new String(buffer, 0, len);
           System.out.println("Replica received from master: " + response.trim());
 
+          // Send PSYNC ? -1
+          String psyncCmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+          out.write(psyncCmd.getBytes());
+          out.flush();
+
+          // Wait for +FULLRESYNC from master (can be ignored for now)
+          len = in.read(buffer);
+          response = new String(buffer, 0, len);
+          System.out.println("Replica received from master: " + response.trim());
+
           System.out.println("Replica handshake with master complete.");
         } catch (Exception e) {
           System.out.println("Failed to connect/send handshake to master: " + e.getMessage());
