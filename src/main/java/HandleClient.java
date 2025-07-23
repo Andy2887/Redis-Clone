@@ -3,6 +3,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import StorageManager.*;
@@ -531,19 +532,50 @@ public class HandleClient implements Runnable {
   }
   
   private void handleXread(List<String> command, OutputStream outputStream) throws IOException {
-    // XREAD streams stream_key entry_id
+    // XREAD streams stream_key1 [stream_key2 ...] entry_id1 [entry_id2 ...]
     // Minimum: XREAD streams stream_key entry_id (4 arguments)
     if (command.size() >= 4 && command.get(1).equalsIgnoreCase("streams")) {
-      String streamKey = command.get(2);
-      String afterId = command.get(3);
       
-      // Use StreamStorage to get entries after the specified ID (exclusive)
-      List<StreamEntry> matchingEntries = streamStorage.getEntriesAfter(streamKey, afterId);
+      // Calculate number of streams
+      // Format: XREAD streams key1 key2 ... keyN id1 id2 ... idN
+      // Total arguments after "streams" should be even (N keys + N ids)
+      int argsAfterStreams = command.size() - 2; // Subtract "XREAD" and "streams"
+      if (argsAfterStreams % 2 != 0) {
+        outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xread' command").getBytes());
+        System.out.println("Client " + clientId + " - Sent error: XREAD uneven number of stream keys and IDs");
+        return;
+      }
+      
+      int numStreams = argsAfterStreams / 2;
+      
+      // Extract stream keys and IDs
+      List<String> streamKeys = new ArrayList<>();
+      List<String> afterIds = new ArrayList<>();
+      
+      for (int i = 0; i < numStreams; i++) {
+        streamKeys.add(command.get(2 + i)); // Stream keys start at index 2
+        afterIds.add(command.get(2 + numStreams + i)); // IDs start after all stream keys
+      }
+      
+      // Query each stream and collect results
+      Map<String, List<StreamEntry>> streamResults = new java.util.LinkedHashMap<>();
+      
+      for (int i = 0; i < numStreams; i++) {
+        String streamKey = streamKeys.get(i);
+        String afterId = afterIds.get(i);
+        
+        // Use StreamStorage to get entries after the specified ID (exclusive)
+        List<StreamEntry> matchingEntries = streamStorage.getEntriesAfter(streamKey, afterId);
+        streamResults.put(streamKey, matchingEntries);
+      }
       
       // Build RESP array response using RESPProtocol
-      String response = RESPProtocol.formatXreadResponse(streamKey, matchingEntries);
+      String response = RESPProtocol.formatXreadMultiResponse(streamResults);
       outputStream.write(response.getBytes());
-      System.out.println("Client " + clientId + " - XREAD streams " + streamKey + " " + afterId + " -> " + matchingEntries.size() + " entries");
+      
+      // Log the result
+      int totalEntries = streamResults.values().stream().mapToInt(List::size).sum();
+      System.out.println("Client " + clientId + " - XREAD streams " + streamKeys + " " + afterIds + " -> " + totalEntries + " total entries across " + streamResults.size() + " streams");
       
     } else {
       outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xread' command").getBytes());

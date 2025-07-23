@@ -290,6 +290,65 @@ public class RESPProtocol {
     }
     
     /**
+     * Formats an XREAD response for multiple streams.
+     * XREAD returns an array where each element is [stream_key, [entry1, entry2, ...]]
+     * 
+     * @param streamResults map of stream keys to their corresponding entries
+     * @return formatted RESP array for XREAD response with multiple streams
+     */
+    public static <T> String formatXreadMultiResponse(Map<String, List<T>> streamResults) {
+        if (streamResults == null || streamResults.isEmpty()) {
+            return EMPTY_ARRAY;
+        }
+        
+        // Filter out streams with no entries
+        List<Map.Entry<String, List<T>>> nonEmptyStreams = new ArrayList<>();
+        for (Map.Entry<String, List<T>> entry : streamResults.entrySet()) {
+            if (entry.getValue() != null && !entry.getValue().isEmpty()) {
+                nonEmptyStreams.add(entry);
+            }
+        }
+        
+        if (nonEmptyStreams.isEmpty()) {
+            return EMPTY_ARRAY;
+        }
+        
+        StringBuilder response = new StringBuilder();
+        
+        // Outer array with the number of streams that have entries
+        response.append(ARRAY_PREFIX).append(nonEmptyStreams.size()).append(CRLF);
+        
+        for (Map.Entry<String, List<T>> streamEntry : nonEmptyStreams) {
+            String streamKey = streamEntry.getKey();
+            List<T> entries = streamEntry.getValue();
+            
+            // Array with 2 elements: [stream_key, entries_array]
+            response.append(ARRAY_PREFIX).append("2").append(CRLF);
+            
+            // Stream key as bulk string
+            response.append(formatBulkString(streamKey));
+            
+            // Entries array
+            response.append(ARRAY_PREFIX).append(entries.size()).append(CRLF);
+            
+            for (T entry : entries) {
+                try {
+                    // Use reflection to get id and fields
+                    String id = (String) entry.getClass().getField("id").get(entry);
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> fields = (Map<String, String>) entry.getClass().getField("fields").get(entry);
+                    response.append(formatStreamEntry(id, fields));
+                } catch (Exception e) {
+                    // If reflection fails, skip this entry
+                    continue;
+                }
+            }
+        }
+        
+        return response.toString();
+    }
+    
+    /**
      * Validates if a string contains valid RESP format.
      * 
      * @param resp the RESP string to validate
