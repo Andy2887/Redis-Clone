@@ -13,17 +13,6 @@ public class HandleClient implements Runnable {
   private Socket clientSocket;
   private int clientId;
   
-  // Simple class to represent a stream entry
-  private static class StreamEntry {
-    public final String id;
-    public final Map<String, String> fields;
-    
-    public StreamEntry(String id, Map<String, String> fields) {
-      this.id = id;
-      this.fields = fields;
-    }
-  }
-  
   // Shared storage for all clients - using ConcurrentHashMap for thread safety
   private static final Map<String, String> storage = new ConcurrentHashMap<>();
   // Storage for expiry times (key -> expiry timestamp in milliseconds)
@@ -627,41 +616,41 @@ public class HandleClient implements Runnable {
       String streamKey = command.get(1);
       String entryId = command.get(2);
       
-      // Auto-generate sequence number if needed
-      String actualEntryId = generateEntryId(entryId, streamKey);
-      
-      // Validate entry ID format and value
-      String validationError = validateEntryId(actualEntryId, streamKey);
-      if (validationError != null) {
-        outputStream.write(validationError.getBytes());
-        System.out.println("Client " + clientId + " - XADD " + streamKey + " validation error: " + actualEntryId);
-        return;
-      }
-      
-      // Parse field-value pairs
-      Map<String, String> fields = new java.util.LinkedHashMap<>();
-      for (int i = 3; i < command.size(); i += 2) {
-        String fieldName = command.get(i);
-        String fieldValue = command.get(i + 1);
-        fields.put(fieldName, fieldValue);
-      }
-      
-      // Create stream entry
-      StreamEntry entry = new StreamEntry(actualEntryId, fields);
-      
       // Get or create the stream
       List<StreamEntry> stream = streams.computeIfAbsent(streamKey, k -> new ArrayList<>());
       
-      // Add entry to stream
       synchronized (stream) {
+        // Auto-generate sequence number if needed
+        String actualEntryId = StreamIdHelper.generateEntryId(entryId, streamKey, stream);
+        
+        // Validate entry ID format and value
+        String validationError = StreamIdHelper.validateEntryId(actualEntryId, stream);
+        if (validationError != null) {
+          outputStream.write(validationError.getBytes());
+          System.out.println("Client " + clientId + " - XADD " + streamKey + " validation error: " + actualEntryId);
+          return;
+        }
+        
+        // Parse field-value pairs
+        Map<String, String> fields = new java.util.LinkedHashMap<>();
+        for (int i = 3; i < command.size(); i += 2) {
+          String fieldName = command.get(i);
+          String fieldValue = command.get(i + 1);
+          fields.put(fieldName, fieldValue);
+        }
+        
+        // Create stream entry
+        StreamEntry entry = new StreamEntry(actualEntryId, fields);
+        
+        // Add entry to stream
         stream.add(entry);
         System.out.println("Client " + clientId + " - XADD " + streamKey + " " + actualEntryId + " -> " + fields.size() + " fields");
+        
+        // Return the entry ID as a bulk string
+        String response = RESPProtocol.formatBulkString(actualEntryId);
+        outputStream.write(response.getBytes());
+        System.out.println("Client " + clientId + " - XADD " + streamKey + " returned entry ID: " + actualEntryId);
       }
-      
-      // Return the entry ID as a bulk string
-      String response = RESPProtocol.formatBulkString(actualEntryId);
-      outputStream.write(response.getBytes());
-      System.out.println("Client " + clientId + " - XADD " + streamKey + " returned entry ID: " + actualEntryId);
       
     } else {
       if (command.size() < 5) {
@@ -692,11 +681,11 @@ public class HandleClient implements Runnable {
       }
 
       synchronized (stream) {
-        // Filter entries based on start and end IDs
+        // Filter entries based on start and end IDs using StreamIdHelper
         List<StreamEntry> matchingEntries = new ArrayList<>();
 
         for (StreamEntry entry : stream) {
-          if (isEntryInRange(entry.id, startId, endId)) {
+          if (StreamIdHelper.isEntryInRange(entry.id, startId, endId)) {
             matchingEntries.add(entry);
           }
         }
@@ -709,188 +698,6 @@ public class HandleClient implements Runnable {
     } else {
       outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xrange' command").getBytes());
       System.out.println("Client " + clientId + " - Sent error: XRANGE missing arguments");
-    }
-  }
-  
-  private String validateEntryId(String entryId, String streamKey) {
-    // Parse the entry ID (format: milliseconds-sequence)
-    String[] parts = entryId.split("-");
-    if (parts.length != 2) {
-      return RESPProtocol.formatError("ERR Invalid stream ID specified as stream command argument");
-    }
-    
-    long milliseconds;
-    long sequence;
-    try {
-      milliseconds = Long.parseLong(parts[0]);
-      sequence = Long.parseLong(parts[1]);
-    } catch (NumberFormatException e) {
-      return RESPProtocol.formatError("ERR Invalid stream ID specified as stream command argument");
-    }
-    
-    // Check if ID is greater than 0-0
-    if (milliseconds == 0 && sequence == 0) {
-      return RESPProtocol.formatError("ERR The ID specified in XADD must be greater than 0-0");
-    }
-    
-    // Get the stream to check the last entry
-    List<StreamEntry> stream = streams.get(streamKey);
-    if (stream != null && !stream.isEmpty()) {
-      synchronized (stream) {
-        if (!stream.isEmpty()) {
-          // Get the last entry ID
-          StreamEntry lastEntry = stream.get(stream.size() - 1);
-          String lastId = lastEntry.id;
-          String[] lastParts = lastId.split("-");
-          
-          if (lastParts.length == 2) {
-            try {
-              long lastMilliseconds = Long.parseLong(lastParts[0]);
-              long lastSequence = Long.parseLong(lastParts[1]);
-              
-              // Check if new ID is greater than last ID
-              if (milliseconds < lastMilliseconds || 
-                  (milliseconds == lastMilliseconds && sequence <= lastSequence)) {
-                return RESPProtocol.formatError("ERR The ID specified in XADD is equal or smaller than the target stream top item");
-              }
-            } catch (NumberFormatException e) {
-              // If we can't parse the last entry ID, allow the new entry
-            }
-          }
-        }
-      }
-    }
-    
-    return null; // No validation error
-  }
-  
-  private String generateEntryId(String entryId, String streamKey) {
-    // Check if the entire entry ID is "*" (auto-generate both time and sequence)
-    if (entryId.equals("*")) {
-      long currentTimeMs = System.currentTimeMillis();
-      long sequence = getNextSequenceNumber(currentTimeMs, streamKey);
-      
-      String generatedId = currentTimeMs + "-" + sequence;
-      System.out.println("Client " + clientId + " - Generated entry ID: " + entryId + " -> " + generatedId);
-      return generatedId;
-    }
-    
-    // Check if sequence number needs to be auto-generated
-    String[] parts = entryId.split("-");
-    if (parts.length != 2) {
-      return entryId; // Invalid format, let validation handle it
-    }
-    
-    // If sequence part is not "*", return the original ID
-    if (!parts[1].equals("*")) {
-      return entryId;
-    }
-    
-    // Parse the milliseconds part
-    long milliseconds;
-    try {
-      milliseconds = Long.parseLong(parts[0]);
-    } catch (NumberFormatException e) {
-      return entryId; // Invalid format, let validation handle it
-    }
-    
-    // Auto-generate sequence number
-    long sequence = getNextSequenceNumber(milliseconds, streamKey);
-    
-    String generatedId = milliseconds + "-" + sequence;
-    System.out.println("Client " + clientId + " - Generated entry ID: " + entryId + " -> " + generatedId);
-    return generatedId;
-  }
-  
-  private long getNextSequenceNumber(long milliseconds, String streamKey) {
-    // Get the stream to find the last sequence number for this milliseconds value
-    List<StreamEntry> stream = streams.get(streamKey);
-    
-    if (stream == null || stream.isEmpty()) {
-      // No existing entries
-      if (milliseconds == 0) {
-        return 1; // Special case: for time 0, default sequence is 1
-      } else {
-        return 0; // For other times, default sequence is 0
-      }
-    }
-    
-    synchronized (stream) {
-      // Find the highest sequence number for the given milliseconds
-      long maxSequence = -1;
-      boolean foundSameTime = false;
-      
-      for (StreamEntry entry : stream) {
-        String[] entryParts = entry.id.split("-");
-        if (entryParts.length == 2) {
-          try {
-            long entryMilliseconds = Long.parseLong(entryParts[0]);
-            long entrySequence = Long.parseLong(entryParts[1]);
-            
-            if (entryMilliseconds == milliseconds) {
-              foundSameTime = true;
-              maxSequence = Math.max(maxSequence, entrySequence);
-            }
-          } catch (NumberFormatException e) {
-            // Skip invalid entries
-          }
-        }
-      }
-      
-      if (foundSameTime) {
-        // Found entries with the same milliseconds, increment the max sequence
-        return maxSequence + 1;
-      } else {
-        // No entries with the same milliseconds
-        if (milliseconds == 0) {
-          return 1; // Special case: for time 0, default sequence is 1
-        } else {
-          return 0; // For other times, default sequence is 0
-        }
-      }
-    }
-  }
-  
-  private boolean isEntryInRange(String entryId, String startId, String endId) {
-    // Handle special cases for start and end
-    String actualStartId = startId.equals("-") ? "0-0" : normalizeId(startId);
-    String actualEndId = endId.equals("+") ? Long.MAX_VALUE + "-" + Long.MAX_VALUE : normalizeId(endId);
-    
-    // Compare entry ID with start and end
-    return compareIds(entryId, actualStartId) >= 0 && compareIds(entryId, actualEndId) <= 0;
-  }
-  
-  private String normalizeId(String id) {
-    // If ID doesn't contain sequence number, add default sequence (0 for start, max for end)
-    if (!id.contains("-")) {
-      return id + "-0";
-    }
-    return id;
-  }
-  
-  private int compareIds(String id1, String id2) {
-    String[] parts1 = id1.split("-");
-    String[] parts2 = id2.split("-");
-    
-    if (parts1.length != 2 || parts2.length != 2) {
-      return 0; // Invalid format, treat as equal
-    }
-    
-    try {
-      long milliseconds1 = Long.parseLong(parts1[0]);
-      long sequence1 = Long.parseLong(parts1[1]);
-      long milliseconds2 = Long.parseLong(parts2[0]);
-      long sequence2 = Long.parseLong(parts2[1]);
-      
-      // Compare milliseconds first
-      if (milliseconds1 != milliseconds2) {
-        return Long.compare(milliseconds1, milliseconds2);
-      }
-      
-      // If milliseconds are equal, compare sequence numbers
-      return Long.compare(sequence1, sequence2);
-    } catch (NumberFormatException e) {
-      return 0; // Invalid format, treat as equal
     }
   }
   
