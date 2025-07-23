@@ -1,3 +1,4 @@
+package StorageManager;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -227,6 +228,49 @@ public class RESPProtocol {
         }
         
         StringBuilder response = new StringBuilder();
+        response.append(ARRAY_PREFIX).append(entries.size()).append(CRLF);
+        
+        for (T entry : entries) {
+            try {
+                // Use reflection to get id and fields
+                String id = (String) entry.getClass().getField("id").get(entry);
+                @SuppressWarnings("unchecked")
+                Map<String, String> fields = (Map<String, String>) entry.getClass().getField("fields").get(entry);
+                response.append(formatStreamEntry(id, fields));
+            } catch (Exception e) {
+                // If reflection fails, skip this entry
+                continue;
+            }
+        }
+        
+        return response.toString();
+    }
+    
+    /**
+     * Formats an XREAD response for a single stream.
+     * XREAD returns an array where each element is [stream_key, [entry1, entry2, ...]]
+     * 
+     * @param streamKey the stream key
+     * @param entries list of stream entries
+     * @return formatted RESP array for XREAD response
+     */
+    public static <T> String formatXreadResponse(String streamKey, List<T> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return EMPTY_ARRAY;
+        }
+        
+        StringBuilder response = new StringBuilder();
+        
+        // Outer array with 1 element (the stream)
+        response.append(ARRAY_PREFIX).append("1").append(CRLF);
+        
+        // Array with 2 elements: [stream_key, entries_array]
+        response.append(ARRAY_PREFIX).append("2").append(CRLF);
+        
+        // Stream key as bulk string
+        response.append(formatBulkString(streamKey));
+        
+        // Entries array
         response.append(ARRAY_PREFIX).append(entries.size()).append(CRLF);
         
         for (T entry : entries) {
