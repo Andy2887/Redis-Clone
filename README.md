@@ -83,9 +83,9 @@ OK
 This server supports Redis master-replica replication:
 
 - Start a replica with:
-  ```bash
-  ./run.sh --port 6380 --replicaof "localhost 6379"
-
+```bash
+./run.sh --port 6380 --replicaof "localhost 6379"
+```
 ### Supported Data Types
 - **Strings**: UTF-8 encoded text values
 - **Lists**: Ordered collections of strings with O(1) head/tail operations
