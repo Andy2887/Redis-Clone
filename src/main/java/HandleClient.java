@@ -14,6 +14,9 @@ public class HandleClient implements Runnable {
   private String serverRole;
   private static final String MASTER_REPLID = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
   private static final String MASTER_REPL_OFFSET = "0";
+  // Track the replica's OutputStream and connection state
+  private static OutputStream replicaOutputStream = null;
+  private static boolean replicaHandshakeComplete = false;
   
   // Storage managers for different data types
   private static final StringStorage stringStorage = new StringStorage();
@@ -65,6 +68,19 @@ public class HandleClient implements Runnable {
   
   private void handleCommand(List<String> command, OutputStream outputStream) throws IOException {
     String commandName = command.get(0).toUpperCase();
+    
+    // List of write commands to propagate
+    boolean isWriteCommand = commandName.equals("SET") ||
+                             commandName.equals("DEL") ||
+                             commandName.equals("RPUSH") ||
+                             commandName.equals("LPUSH") ||
+                             commandName.equals("LPOP") ||
+                             commandName.equals("BLPOP") ||
+                             commandName.equals("XADD");
+
+    if (isWriteCommand) {
+      propagateToReplica(command);
+    }
     
     switch (commandName) {
       case "PING":
@@ -718,6 +734,12 @@ public class HandleClient implements Runnable {
       outputStream.write(emptyRdb); // No trailing \r\n
       outputStream.flush();
       System.out.println("Client " + clientId + " - Sent empty RDB file (" + emptyRdb.length + " bytes)");
+
+      // Mark this connection as the replica connection
+      synchronized (HandleClient.class) {
+        replicaOutputStream = outputStream;
+        replicaHandshakeComplete = true;
+      }
   }
 
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
@@ -757,5 +779,26 @@ public class HandleClient implements Runnable {
                                + Character.digit(s.charAt(i+1), 16));
       }
       return data;
+  }
+
+  // Propagate write command to replica if connected
+  private void propagateToReplica(List<String> command) {
+    synchronized (HandleClient.class) {
+      if (replicaOutputStream != null && replicaHandshakeComplete) {
+        try {
+          // Format as RESP array
+          StringBuilder sb = new StringBuilder();
+          sb.append("*").append(command.size()).append("\r\n");
+          for (String arg : command) {
+            sb.append("$").append(arg.length()).append("\r\n").append(arg).append("\r\n");
+          }
+          replicaOutputStream.write(sb.toString().getBytes());
+          replicaOutputStream.flush();
+          System.out.println("Propagated to replica: " + command);
+        } catch (IOException e) {
+          System.out.println("Failed to propagate to replica: " + e.getMessage());
+        }
+      }
+    }
   }
 }
