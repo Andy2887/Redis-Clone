@@ -53,6 +53,11 @@ public class RESPProtocol {
                 if (content == null) {
                     return null;
                 }
+
+                // Validate that content length matches declared length
+                if (content.length() != stringLength) {
+                    return null; // Malformed RESP data
+                }
                 
                 elements.add(content);
             }

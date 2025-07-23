@@ -27,7 +27,7 @@ public class ListStorage {
      */
     public int leftPush(String key, String... elements) {
         synchronized (listOperationsLock) {
-            List<String> list = lists.computeIfAbsent(key, k -> new ArrayList<>());
+            List<String> list = lists.computeIfAbsent(key, _ -> new ArrayList<>());
             
             // Insert elements at the beginning (reverse order to maintain command semantics)
             for (String element : elements) {
@@ -50,7 +50,7 @@ public class ListStorage {
      */
     public int rightPush(String key, String... elements) {
         synchronized (listOperationsLock) {
-            List<String> list = lists.computeIfAbsent(key, k -> new ArrayList<>());
+            List<String> list = lists.computeIfAbsent(key, _ -> new ArrayList<>());
             
             // Add elements to the end
             for (String element : elements) {
@@ -184,7 +184,7 @@ public class ListStorage {
             }
             
             // Block the client
-            Queue<BlockedClient> clientQueue = blockedClients.computeIfAbsent(key, k -> new ConcurrentLinkedQueue<>());
+            Queue<BlockedClient> clientQueue = blockedClients.computeIfAbsent(key, _ -> new ConcurrentLinkedQueue<>());
             clientQueue.offer(blockedClient);
             
             return true; // Client was blocked

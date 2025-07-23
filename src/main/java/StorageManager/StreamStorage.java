@@ -24,7 +24,7 @@ public class StreamStorage {
      */
     public String addEntry(String key, String entryId, Map<String, String> fields) throws IllegalArgumentException {
         // Get or create the stream
-        List<StreamEntry> stream = streams.computeIfAbsent(key, k -> new ArrayList<>());
+        List<StreamEntry> stream = streams.computeIfAbsent(key, _ -> new ArrayList<>());
         
         synchronized (stream) {
             // Auto-generate sequence number if needed
@@ -257,7 +257,7 @@ public class StreamStorage {
         
         // No new entries found, block the client on all streams
         for (String streamKey : client.streamKeys) {
-            blockedClients.computeIfAbsent(streamKey, k -> new ArrayList<>()).add(client);
+            blockedClients.computeIfAbsent(streamKey, _ -> new ArrayList<>()).add(client);
         }
         
         return true;
