@@ -66,7 +66,7 @@ public class HandleClient implements Runnable {
   }
   
   
-  private void handleCommand(List<String> command, OutputStream outputStream) throws IOException {
+  public void handleCommand(List<String> command, OutputStream outputStream) throws IOException {
     String commandName = command.get(0).toUpperCase();
     
     // List of write commands to propagate

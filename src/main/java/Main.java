@@ -1,7 +1,10 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.List;
 
 public class Main {
   public static String serverRole = "master";
@@ -23,6 +26,7 @@ public class Main {
         try (Socket masterSocket = new Socket(masterHost, masterPort)) {
           OutputStream out = masterSocket.getOutputStream();
           java.io.InputStream in = masterSocket.getInputStream();
+          BufferedReader reader = new BufferedReader(new InputStreamReader(in));
 
           // Send RESP array: *1\r\n$4\r\nPING\r\n
           String pingResp = "*1\r\n$4\r\nPING\r\n";
@@ -68,7 +72,43 @@ public class Main {
           response = new String(buffer, 0, len);
           System.out.println("Replica received from master: " + response.trim());
 
+          // Read and discard the RDB file (parse RESP bulk string header, then read N bytes)
+          String bulkHeader = "";
+          int b;
+          while ((b = in.read()) != -1) {
+            bulkHeader += (char) b;
+            if (bulkHeader.endsWith("\r\n")) break;
+          }
+          if (bulkHeader.startsWith("$")) {
+            int rdbLen = Integer.parseInt(bulkHeader.substring(1, bulkHeader.length() - 2));
+            int read = 0;
+            while (read < rdbLen) {
+              int skipped = (int) in.skip(rdbLen - read);
+              if (skipped <= 0) break;
+              read += skipped;
+            }
+          }
+
           System.out.println("Replica handshake with master complete.");
+
+          // Now process propagated commands from master
+          while (true) {
+            String line = reader.readLine();
+            if (line == null) break;
+            if (line.startsWith("*")) {
+              List<String> command = StorageManager.RESPProtocol.parseRESPArray(reader, line);
+              if (command != null && !command.isEmpty()) {
+                System.out.println("Replica - Received propagated command: " + command);
+                // Process the command, but do NOT send a response to master
+                // Use a dummy OutputStream that discards output
+                HandleClient dummyClient = new HandleClient(null, -1, "slave");
+                java.io.OutputStream devNull = new java.io.OutputStream() {
+                  public void write(int b) {}
+                };
+                dummyClient.handleCommand(command, devNull);
+              }
+            }
+          }
         } catch (Exception e) {
           System.out.println("Failed to connect/send handshake to master: " + e.getMessage());
         }
