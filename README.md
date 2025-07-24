@@ -24,11 +24,10 @@ A high-performance, thread-safe Redis server implementation built from scratch i
 
 ### Advanced Features
 - **Replication**: Master-replica support with command propagation and full resynchronization
+- **RDB Persistence**: Loads data from RDB files at startup (`--dir` and `--dbfilename` flags supported). Supports parsing multiple keys, string values, and expiry times from RDB files.
 - **Expiry Support**: Automatic key expiration with millisecond precision
 - **Blocking Operations**: BLPOP and XREAD BLOCK with configurable timeouts and FIFO client ordering
 - **Thread Safety**: Concurrent client handling with proper synchronization
-- **RESP Protocol**: Full Redis Serialization Protocol compliance
-- **Memory Management**: Automatic cleanup of empty data structures
 
 ## 🛠️ Setup and Installation
 
@@ -46,9 +45,8 @@ A high-performance, thread-safe Redis server implementation built from scratch i
 
 The server will start on `localhost:6379` by default.
 
-## 📖 Usage
+## 📖 Basic Operations
 
-### Basic Operations
 ```bash
 # Connect using redis-cli or any Redis client
 redis-cli -p 6379
@@ -110,6 +108,21 @@ Option 2:
 ```
 - The replica will connect to the master, perform the handshake, and receive command propagation.
 
+## 💾 RDB Persistence
+
+This server supports loading data from Redis RDB files at startup.
+
+- Use the `--dir <dir>` and `--dbfilename <filename>` flags to specify the RDB file location.
+- On startup, the server parses the RDB file and loads all string keys, values, and expiry times into memory.
+- Expired keys (at load time) are ignored.
+- Only length-prefixed string encodings are supported for RDB parsing.
+
+**Example:**
+```bash
+./run.sh --dir /path/to/rdb/dir --dbfilename dump.rdb
+```
+After loading, all keys and values from the RDB file are available for `GET`, `KEYS *`, and other commands.
+
 ### Supported Data Types
 - **Strings**: UTF-8 encoded text values
 - **Lists**: Ordered collections of strings with O(1) head/tail operations
@@ -162,19 +175,22 @@ telnet localhost 6379
 src/
 ├── main/
 │   └── java/
-│       ├── Main.java             # Server entry point
-│       ├── HandleClient.java     # Client request handler
-│       ├── HandleReplica.java    # Replica handshake and sync logic
+│       ├── Main.java                # Server entry point: starts server, loads RDB, handles config
+│       ├── HandleClient.java        # Handles client connections, RESP parsing, command execution
+│       ├── HandleReplica.java       # Handles replica handshake and command propagation from master
+│       ├── RdbManager/
+│       │   ├── RdbStringResult.java # Helper for RDB string parsing
+│       │   └── RdbSizeResult.java   # Helper for RDB size parsing
 │       └── StorageManager/
-│           ├── BlockedClient.java
-│           ├── ListStorage.java
-│           ├── RESPProtocol.java
-│           ├── StreamEntry.java
-│           ├── StreamIdHelper.java
-│           ├── StreamStorage.java
-│           └── StringStorage.java
+│           ├── BlockedClient.java   # Data structure for blocked client state (BLPOP/XREAD)
+│           ├── ListStorage.java     # Thread-safe Redis list implementation with blocking support
+│           ├── RESPProtocol.java    # RESP protocol parsing and formatting utilities
+│           ├── StreamEntry.java     # Data structure for Redis stream entries
+│           ├── StreamIdHelper.java  # Stream ID parsing, validation, and comparison
+│           ├── StreamStorage.java   # Thread-safe Redis stream implementation with blocking support
+│           └── StringStorage.java   # Thread-safe Redis string implementation with expiry support
 └── test/
-    └── java/                     # Unit tests
+    └── java/                        # Unit tests
 ```
 
 ## 🔮 Future Enhancements
