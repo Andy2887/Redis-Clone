@@ -155,56 +155,82 @@ public class Main {
 
   private static void parseRdb(byte[] data) {
     int i = 0;
+    Long pendingExpiry = null; // Store expiry for the next key-value pair
+
     // Check header
     if (data.length < 9 || !new String(Arrays.copyOfRange(data, 0, 9)).equals("REDIS0011")) {
-      System.out.println("Invalid RDB header");
-      return;
+        System.out.println("Invalid RDB header");
+        return;
     }
     i = 9;
-    // Skip metadata and go to database section
     while (i < data.length) {
-      int b = data[i] & 0xFF;
-      if (b == 0xFE) { // DB selector
-        System.out.println("RDB: DB selector found");
-        i++;
-        RdbSizeResult dbIndex = readSize(data, i);
-        System.out.println("RDB: DB index = " + dbIndex.value);
-        i += dbIndex.bytesRead;
-      } else if (b == 0xFB) { // hash table sizes
-        System.out.println("RDB: Hash table sizes found");
-        i++;
-        RdbSizeResult hashTableSize = readSize(data, i);
-        System.out.println("RDB: Hash table size = " + hashTableSize.value);
-        i += hashTableSize.bytesRead;
-        RdbSizeResult expiresHashTableSize = readSize(data, i);
-        System.out.println("RDB: Expires hash table size = " + expiresHashTableSize.value);
-        i += expiresHashTableSize.bytesRead;
-      } else if (b == 0xFC || b == 0xFD) { // expire info
-        boolean ms = (b == 0xFC);
-        System.out.println("RDB: Expire info found, ms=" + ms);
-        i++;
-        i += ms ? 8 : 4; // skip expire timestamp
-      } else if (b == 0xFF) {
-        System.out.println("RDB: End of file marker found");
-        break; // End of file
-      } else {
-        // Value type (expect 0 for string)
-        int valueType = data[i++] & 0xFF;
-        if (valueType == 0) {
-          // Key
-          RdbStringResult keyRes = readRdbString(data, i);
-          String key = keyRes.value;
-          System.out.println("RDB: Key = " + key);
-          i += keyRes.bytesRead;
-          // Value
-          RdbStringResult valRes = readRdbString(data, i);
-          String value = valRes.value;
-          System.out.println("RDB: Value = " + value);
-          i += valRes.bytesRead;
-          stringStorage.set(key, value, null);
-          System.out.println("RDB: Added key from RDB to String Storage: " + key + " = " + value);
+        int b = data[i] & 0xFF;
+        if (b == 0xFE) { // DB selector
+            System.out.println("RDB: DB selector found");
+            i++;
+            RdbSizeResult dbIndex = readSize(data, i);
+            System.out.println("RDB: DB index = " + dbIndex.value);
+            i += dbIndex.bytesRead;
+        } else if (b == 0xFB) { // hash table sizes
+            System.out.println("RDB: Hash table sizes found");
+            i++;
+            RdbSizeResult hashTableSize = readSize(data, i);
+            System.out.println("RDB: Hash table size = " + hashTableSize.value);
+            i += hashTableSize.bytesRead;
+            RdbSizeResult expiresHashTableSize = readSize(data, i);
+            System.out.println("RDB: Expires hash table size = " + expiresHashTableSize.value);
+            i += expiresHashTableSize.bytesRead;
+        } else if (b == 0xFC || b == 0xFD) { // expire info
+            boolean ms = (b == 0xFC);
+            System.out.println("RDB: Expire info found, ms=" + ms);
+            i++;
+            long expiry;
+            if (ms) {
+                expiry = 0;
+                for (int j = 0; j < 8; j++) {
+                    expiry |= ((long) (data[i + j] & 0xFF)) << (8 * j);
+                }
+                i += 8;
+            } else {
+                expiry = 0;
+                for (int j = 0; j < 4; j++) {
+                    expiry |= ((long) (data[i + j] & 0xFF)) << (8 * j);
+                }
+                expiry *= 1000; // Convert seconds to ms
+                i += 4;
+            }
+            pendingExpiry = expiry;
+        } else if (b == 0xFF) {
+            System.out.println("RDB: End of file marker found");
+            break;
+        } else {
+            int valueType = data[i++] & 0xFF;
+            if (valueType == 0) {
+                // Key
+                RdbStringResult keyRes = readRdbString(data, i);
+                String key = keyRes.value;
+                System.out.println("RDB: Key = " + key);
+                i += keyRes.bytesRead;
+                // Value
+                RdbStringResult valRes = readRdbString(data, i);
+                String value = valRes.value;
+                System.out.println("RDB: Value = " + value);
+                i += valRes.bytesRead;
+
+                Long expiryToSet = null;
+                if (pendingExpiry != null) {
+                    expiryToSet = pendingExpiry;
+                    pendingExpiry = null;
+                }
+                // Only set expiry if it's in the future
+                if (expiryToSet != null && expiryToSet <= System.currentTimeMillis()) {
+                    System.out.println("RDB: Key " + key + " expired at load time, skipping");
+                } else {
+                    stringStorage.set(key, value, expiryToSet);
+                    System.out.println("RDB: Added key from RDB to String Storage: " + key + " = " + value + (expiryToSet != null ? (" (expiry: " + expiryToSet + ")") : ""));
+                }
+            }
         }
-      }
     }
   }
 
