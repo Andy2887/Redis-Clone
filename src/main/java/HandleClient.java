@@ -146,6 +146,10 @@ public class HandleClient implements Runnable {
       case "REPLCONF":
         handleReplconf(command, outputStream);
         break;
+      
+      case "REPLICAOF":
+          handleReplicaof(command, outputStream);
+          break;
 
       case "PSYNC":
         handlePsync(command, outputStream);
@@ -792,6 +796,26 @@ public class HandleClient implements Runnable {
   private void handleReplconf(List<String> command, OutputStream outputStream) throws IOException {
     outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
     System.out.println("Client " + clientId + " - REPLCONF received, responded with +OK");
+  }
+
+  //
+  // Turn the server into master
+  //
+  // Syntax:
+  // REPLICAOF NO ONE
+  //
+  private void handleReplicaof(List<String> command, OutputStream outputStream) throws IOException {
+    // Note: The original REPLICAOF command has two options: 1, turn the server into master. 2, set the current server to be replica of a server
+    // Currently, only 1 is implemented in my code
+    if (command.size() == 3 && command.get(1).equalsIgnoreCase("NO") && command.get(2).equalsIgnoreCase("ONE")) {
+        // Become master
+        Main.serverRole = "master";
+        // Optionally: stop any ongoing replication threads/connections here
+        outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
+        System.out.println("Client " + clientId + " - REPLICAOF NO ONE: Now acting as master");
+    } else {
+        outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'replicaof' command").getBytes());
+    }
   }
 
   private void handlePsync(List<String> command, OutputStream outputStream) throws IOException {

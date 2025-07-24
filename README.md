@@ -96,11 +96,17 @@ OK
 
 ## 🪞 Replication
 
-This server supports Redis master-replica replication:
+This server supports Redis master-replica replication.
 
-- Start a replica with:
+#### Start a replica with:
+
+Option 1:
 ```bash
 ./run.sh --port 6380 --replicaof "localhost 6379"
+```
+Option 2:
+```bash
+./run.sh --port 6380 --replicaof 127.0.0.1 6379
 ```
 - The replica will connect to the master, perform the handshake, and receive command propagation.
 

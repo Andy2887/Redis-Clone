@@ -77,21 +77,41 @@ public class Main {
   }
 
   private static void parseReplicaOfFlag(String[] args) {
-    for (int i = 0; i < args.length; i++) {
-      if ("--replicaof".equals(args[i]) && i + 1 < args.length) {
-        serverRole = "slave";
-        String[] parts = args[i + 1].split(" ");
-        if (parts.length == 2) {
-          masterHost = parts[0];
-          try {
-            masterPort = Integer.parseInt(parts[1]);
-          } catch (NumberFormatException e) {
-            masterPort = -1;
+      System.out.println("Parsing replicaof flag...");
+      for (int i = 0; i < args.length; i++) {
+          if ("--replicaof".equals(args[i])) {
+              serverRole = "slave";
+              System.out.println("Server role set to: " + serverRole);
+              // Support both --replicaof "host port" and --replicaof host port
+              if (i + 2 < args.length) {
+                  // Try the two-argument form: --replicaof host port
+                  masterHost = args[i + 1];
+                  try {
+                      masterPort = Integer.parseInt(args[i + 2]);
+                      System.out.println("Master Host set to: " + masterHost);
+                      System.out.println("Master Port set to: " + masterPort);
+                  } catch (NumberFormatException e) {
+                      masterPort = -1;
+                      System.out.println("Sent error: invalid port value");
+                  }
+              } else if (i + 1 < args.length) {
+                  // Try the single-argument form: --replicaof "host port"
+                  String[] parts = args[i + 1].split(" ");
+                  if (parts.length == 2) {
+                      masterHost = parts[0];
+                      try {
+                          masterPort = Integer.parseInt(parts[1]);
+                          System.out.println("Master Host set to: " + masterHost);
+                          System.out.println("Master Port set to: " + masterPort);
+                      } catch (NumberFormatException e) {
+                          masterPort = -1;
+                          System.out.println("Sent error: invalid port value");
+                      }
+                  }
+              }
+              break;
           }
-        }
-        break;
       }
-    }
   }
 
 }
