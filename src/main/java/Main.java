@@ -6,6 +6,8 @@ import java.net.Socket;
 import java.util.Arrays;
 
 import StorageManager.StringStorage;
+import RdbManager.RdbStringResult;
+import RdbManager.RdbSizeResult;
 
 public class Main {
   public static String serverRole = "master";
@@ -194,29 +196,19 @@ public class Main {
   }
 
   // Helper for size encoding
-  private static class SizeResult {
-    int value;
-    int bytesRead;
-    SizeResult(int value, int bytesRead) { this.value = value; this.bytesRead = bytesRead; }
-  }
-  private static SizeResult readSize(byte[] data, int i) {
+  private static RdbSizeResult readSize(byte[] data, int i) {
     int b = data[i] & 0xFF;
     int type = (b & 0xC0) >> 6;
-    if (type == 0) return new SizeResult(b & 0x3F, 1);
-    if (type == 1) return new SizeResult(((b & 0x3F) << 8) | (data[i+1] & 0xFF), 2);
-    if (type == 2) return new SizeResult(((data[i+1]&0xFF)<<24)|((data[i+2]&0xFF)<<16)|((data[i+3]&0xFF)<<8)|(data[i+4]&0xFF), 5);
+    if (type == 0) return new RdbSizeResult(b & 0x3F, 1);
+    if (type == 1) return new RdbSizeResult(((b & 0x3F) << 8) | (data[i+1] & 0xFF), 2);
+    if (type == 2) return new RdbSizeResult(((data[i+1]&0xFF)<<24)|((data[i+2]&0xFF)<<16)|((data[i+3]&0xFF)<<8)|(data[i+4]&0xFF), 5);
     // type == 3: string encoding, not used for size
-    return new SizeResult(0, 1);
+    return new RdbSizeResult(0, 1);
   }
 
   // Helper for string encoding
-  private static class RdbStringResult {
-    String value;
-    int bytesRead;
-    RdbStringResult(String value, int bytesRead) { this.value = value; this.bytesRead = bytesRead; }
-  }
   private static RdbStringResult readRdbString(byte[] data, int i) {
-    SizeResult sizeRes = readSize(data, i);
+    RdbSizeResult sizeRes = readSize(data, i);
     int b = data[i] & 0xFF;
     int type = (b & 0xC0) >> 6;
     if (type == 0 || type == 1 || type == 2) {
@@ -239,5 +231,4 @@ public class Main {
     }
     return new RdbStringResult("", sizeRes.bytesRead);
   }
-
 }
