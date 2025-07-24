@@ -187,6 +187,10 @@ public class HandleClient implements Runnable {
         handleExec(command, outputStream);
         break;
 
+      case "DISCARD":
+        handleDiscard(command, outputStream);
+        break;
+
       default:
         handleUnknownCommand(commandName, outputStream);
         break;
@@ -944,14 +948,37 @@ public class HandleClient implements Runnable {
 
   private void handleExec(List<String> command, OutputStream outputStream) throws IOException {
     if (inTransaction) {
-      // For now, just return empty array (actual execution in later stages)
-      outputStream.write(RESPProtocol.EMPTY_ARRAY.getBytes());
-      System.out.println("Client " + clientId + " - EXEC (empty transaction) -> *0");
+      List<String> responses = new ArrayList<>();
+      for (List<String> queued : queuedCommands) {
+        // Use a temporary buffer to capture the response for each command
+        java.io.ByteArrayOutputStream tempOut = new java.io.ByteArrayOutputStream();
+        // Execute the command as normal, but not as a transaction
+        boolean prevInTransaction = inTransaction;
+        inTransaction = false;
+        handleCommand(queued, tempOut);
+        inTransaction = prevInTransaction;
+        responses.add(tempOut.toString());
+      }
+      String respArray = RESPProtocol.formatArray(responses);
+      outputStream.write(respArray.getBytes());
+      System.out.println("Client " + clientId + " - EXEC executed " + queuedCommands.size() + " commands");
       inTransaction = false;
       queuedCommands.clear();
     } else {
       outputStream.write(RESPProtocol.formatError("ERR EXEC without MULTI").getBytes());
       System.out.println("Client " + clientId + " - EXEC called without MULTI");
+    }
+  }
+
+  private void handleDiscard(List<String> command, OutputStream outputStream) throws IOException {
+    if (inTransaction) {
+      inTransaction = false;
+      queuedCommands.clear();
+      outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
+      System.out.println("Client " + clientId + " - DISCARD -> OK");
+    } else {
+      outputStream.write(RESPProtocol.formatError("ERR DISCARD without MULTI").getBytes());
+      System.out.println("Client " + clientId + " - DISCARD called without MULTI");
     }
   }
   
