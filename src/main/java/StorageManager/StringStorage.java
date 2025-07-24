@@ -1,5 +1,7 @@
 package StorageManager;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -41,6 +43,16 @@ public class StringStorage {
             return null; // Key has expired
         }
         return storage.get(key);
+    }
+
+    /**
+     * Gets all the keys and remove all expired keys. 
+     * 
+     * @return An array of all the keys
+     */
+    public List<String> getAllKeys() {
+        cleanupExpiredKeys();
+        return new ArrayList<>(storage.keySet());
     }
     
     /**

@@ -158,6 +158,10 @@ public class HandleClient implements Runnable {
       case "CONFIG":
         handleConfig(command, outputStream);
         break;
+
+      case "KEYS":
+        handleKeys(command, outputStream);
+        break;
       
       default:
         handleUnknownCommand(commandName, outputStream);
@@ -869,6 +873,17 @@ public class HandleClient implements Runnable {
     }
   }
 
+  private void handleKeys(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() == 2 && command.get(1).equals("*")) {
+      List<String> keys = new ArrayList<>(Main.stringStorage.getAllKeys());
+      String resp = StorageManager.RESPProtocol.formatStringArray(keys);
+      outputStream.write(resp.getBytes());
+      System.out.println("Client " + clientId + " - KEYS * -> " + keys);
+    } else {
+      outputStream.write(StorageManager.RESPProtocol.formatError("ERR only KEYS * is supported").getBytes());
+    }
+  }
+  
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
     String errorMsg = RESPProtocol.formatError("ERR unknown command '" + commandName + "'");
     outputStream.write(errorMsg.getBytes());
