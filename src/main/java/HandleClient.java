@@ -18,6 +18,7 @@ public class HandleClient implements Runnable {
   // Track the replica's OutputStream and connection state
   private static final List<OutputStream> replicaOutputStreams = new CopyOnWriteArrayList<>();
   private boolean inTransaction = false;
+  private List<List<String>> queuedCommands = new ArrayList<>();
   
   // Storage managers for different data types
   private final StringStorage stringStorage;
@@ -70,6 +71,15 @@ public class HandleClient implements Runnable {
   
   public void handleCommand(List<String> command, OutputStream outputStream) throws IOException {
     String commandName = command.get(0).toUpperCase();
+
+    // If in transaction and not MULTI/EXEC, queue the command
+    if (inTransaction && !commandName.equals("MULTI") && !commandName.equals("EXEC")) {
+      queuedCommands.add(command);
+      outputStream.write(RESPProtocol.formatSimpleString("QUEUED").getBytes());
+      System.out.println("Client " + clientId + " - Queued command: " + command);
+      outputStream.flush();
+      return;
+    }
     
     // List of write commands to propagate
     boolean isWriteCommand = commandName.equals("SET") ||
@@ -927,16 +937,18 @@ public class HandleClient implements Runnable {
 
   private void handleMulti(List<String> command, OutputStream outputStream) throws IOException {
     inTransaction = true;
+    queuedCommands.clear();
     outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
     System.out.println("Client " + clientId + " - MULTI -> OK");
   }
 
   private void handleExec(List<String> command, OutputStream outputStream) throws IOException {
     if (inTransaction) {
-      // Empty transaction: return empty array
+      // For now, just return empty array (actual execution in later stages)
       outputStream.write(RESPProtocol.EMPTY_ARRAY.getBytes());
       System.out.println("Client " + clientId + " - EXEC (empty transaction) -> *0");
       inTransaction = false;
+      queuedCommands.clear();
     } else {
       outputStream.write(RESPProtocol.formatError("ERR EXEC without MULTI").getBytes());
       System.out.println("Client " + clientId + " - EXEC called without MULTI");
