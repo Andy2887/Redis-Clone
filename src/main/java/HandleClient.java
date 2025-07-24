@@ -154,7 +154,11 @@ public class HandleClient implements Runnable {
       case "PSYNC":
         handlePsync(command, outputStream);
         break;
-        
+
+      case "CONFIG":
+        handleConfig(command, outputStream);
+        break;
+      
       default:
         handleUnknownCommand(commandName, outputStream);
         break;
@@ -840,6 +844,29 @@ public class HandleClient implements Runnable {
       synchronized (HandleClient.class) {
         replicaOutputStreams.add(outputStream);
       }
+  }
+
+  private void handleConfig(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() == 3 && command.get(1).equalsIgnoreCase("GET")) {
+      String param = command.get(2);
+      String value = null;
+      if (param.equalsIgnoreCase("dir")) {
+        value = Main.dir;
+      } else if (param.equalsIgnoreCase("dbfilename")) {
+        value = Main.dbfilename;
+      } else {
+        value = ""; // Redis returns empty string for unknown config keys
+      }
+      List<String> resp = new ArrayList<>();
+      resp.add(RESPProtocol.formatBulkString(param));
+      resp.add(RESPProtocol.formatBulkString(value));
+      String response = "*" + resp.size() + "\r\n" + resp.get(0) + resp.get(1);
+      outputStream.write(response.getBytes());
+      System.out.println("Client " + clientId + " - CONFIG GET " + param + " -> " + value);
+    } else {
+      outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'config' command").getBytes());
+      System.out.println("Client " + clientId + " - Sent error: CONFIG wrong arguments");
+    }
   }
 
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {

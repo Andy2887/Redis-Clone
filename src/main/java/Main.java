@@ -6,6 +6,9 @@ public class Main {
   public static String serverRole = "master";
   private static String masterHost = null;
   private static int masterPort = -1;
+  public static String dir = "/tmp";
+  public static String dbfilename = "dump.rdb";
+
   public static void main(String[] args) {
     // You can use print statements as follows for debugging, they'll be visible
     // when running tests.
@@ -13,6 +16,7 @@ public class Main {
 
     ServerSocket serverSocket = null;
     int port = getPortFromArgs(args);
+    parseConfigFlags(args);
     parseReplicaOfFlag(args);
     int clientCounter = 0;
     
@@ -76,6 +80,17 @@ public class Main {
     return port;
   }
 
+  private static void parseConfigFlags(String[] args) {
+    for (int i = 0; i < args.length; i++) {
+      if ("--dir".equals(args[i]) && i + 1 < args.length) {
+        dir = args[i + 1];
+      }
+      if ("--dbfilename".equals(args[i]) && i + 1 < args.length) {
+        dbfilename = args[i + 1];
+      }
+    }
+  }
+  
   private static void parseReplicaOfFlag(String[] args) {
       System.out.println("Parsing replicaof flag...");
       for (int i = 0; i < args.length; i++) {
