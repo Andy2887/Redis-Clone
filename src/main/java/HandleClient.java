@@ -631,16 +631,16 @@ public class HandleClient implements Runnable {
           return;
         }
         try {
-          double timeoutSeconds = Double.parseDouble(command.get(i + 1));
-          if (timeoutSeconds < 0) {
+          long timeoutMs = Long.parseLong(command.get(i + 1));
+          if (timeoutMs < 0) {
             outputStream.write(RESPProtocol.formatError("ERR timeout is negative").getBytes());
             System.out.println("Client " + clientId + " - Sent error: XREAD BLOCK negative timeout");
             return;
           }
-          blockTimeoutMs = timeoutSeconds == 0 ? 0 : (long) (timeoutSeconds * 1000);
+          blockTimeoutMs = timeoutMs;
           i++; // Skip the timeout value
         } catch (NumberFormatException e) {
-          outputStream.write(RESPProtocol.formatError("ERR timeout is not a float or out of range").getBytes());
+          outputStream.write(RESPProtocol.formatError("ERR timeout is not an integer or out of range").getBytes());
           System.out.println("Client " + clientId + " - Sent error: XREAD BLOCK invalid timeout format");
           return;
         }
@@ -651,6 +651,8 @@ public class HandleClient implements Runnable {
     }
     
     final long finalBlockTimeoutMs = blockTimeoutMs;
+
+    System.out.println("Final timeout: " + finalBlockTimeoutMs);
     
     if (streamsIndex == -1) {
       outputStream.write(RESPProtocol.formatError("ERR wrong number of arguments for 'xread' command").getBytes());
