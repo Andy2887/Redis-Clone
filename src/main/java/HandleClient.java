@@ -160,8 +160,8 @@ public class HandleClient implements Runnable {
         break;
       
       case "REPLICAOF":
-          handleReplicaof(command, outputStream);
-          break;
+        handleReplicaof(command, outputStream);
+        break;
 
       case "PSYNC":
         handlePsync(command, outputStream);

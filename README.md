@@ -6,6 +6,10 @@ A high-performance, thread-safe Redis server implementation built from scratch i
 
 ### Core Commands
 - **Connection Management**: `PING` - Test server connectivity
+- **Configuration**: 
+  - `CONFIG GET <param>` - Retrieve server configuration parameters (`dir`, `dbfilename`)
+- **Role Management**:
+  - `REPLICAOF NO ONE` - Switch server to master role
 - **String Operations**: 
   - `SET key value [PX milliseconds]` - Store key-value pairs with optional expiry
   - `GET key` - Retrieve values by key
@@ -21,6 +25,10 @@ A high-performance, thread-safe Redis server implementation built from scratch i
   - `XADD key id field value [field value ...]` - Add entries to a stream
   - `XRANGE key start end` - Get a range of entries from a stream
   - `XREAD [BLOCK timeout] streams key [key ...] id [id ...]` - Read new entries from one or more streams, optionally blocking
+- **Transaction Support**:
+  - `MULTI` - Start a transaction block
+  - `EXEC` - Execute all queued commands in the transaction
+  - `DISCARD` - Discard all queued commands in the transaction
 
 ### Advanced Features
 - **Replication**: Master-replica support with command propagation and full resynchronization
@@ -90,6 +98,17 @@ OK
    2) 1) 1) "1680000000000-0"
          2) 1) "field1"
                2) "value1"
+
+# Transaction operations
+> MULTI
+OK
+> SET key1 "value1"
+QUEUED
+> RPUSH mylist "item"
+QUEUED
+> EXEC
+1) OK
+2) (integer) 1
 ```
 
 ## 🪞 Replication
@@ -194,11 +213,9 @@ src/
 ```
 
 ## 🔮 Future Enhancements
-- Persistence support (RDB)
-- Transactions
-- Partial resynchronization for replication
-- More advanced stream and blocking features
-- Additional Redis command support
+- Enhanced `REPLICAOF` command: allow dynamic switching between master and replica roles
+- Full sync: enable replicas to receive and load real RDB files from master
+- Implement `SAVE` command for manual persistence
 
 ## 📄 License
 
