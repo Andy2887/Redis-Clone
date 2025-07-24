@@ -223,4 +223,4 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## 🙏 Acknowledgements
 
-This project
+This project is implemented following the tutorial from Codecrafters "Build Your Own Redis". Special thanks to the Codecrafters team for their excellent resources and guidance.
