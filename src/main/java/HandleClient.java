@@ -675,8 +675,20 @@ public class HandleClient implements Runnable {
     List<String> afterIds = new ArrayList<>();
     
     for (int i = 0; i < numStreams; i++) {
-      streamKeys.add(command.get(streamsIndex + 1 + i)); // Stream keys start after "streams"
-      afterIds.add(command.get(streamsIndex + 1 + numStreams + i)); // IDs start after all stream keys
+      String streamKey = command.get(streamsIndex + 1 + i); // Stream keys start after "streams"
+      String id = command.get(streamsIndex + 1 + numStreams + i); // IDs start after all stream keys
+
+      // If the ID is "$", replace it with the current max ID in the stream (or "0-0" if stream is empty)
+      if (id.equals("$")) {
+        String lastId = streamStorage.getLastEntryId(streamKey);
+        if (lastId == null) {
+          id = "0-0";
+        } else {
+          id = lastId;
+        }
+      }
+      streamKeys.add(streamKey);
+      afterIds.add(id);
     }
     
     // Query each stream and collect results
