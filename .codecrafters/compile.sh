@@ -2,7 +2,7 @@
 #
 # This script is used to compile your program on CodeCrafters
 #
-# This runs before .codecrafters/run.sh
+# This runs before .codecrafters/server.sh
 #
 # Learn more: https://codecrafters.io/program-interface
 

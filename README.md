@@ -40,7 +40,7 @@ A high-performance, thread-safe Redis server implementation built from scratch i
 
 2. Start the project:
    ```bash
-   ./run.sh
+   ./server.sh
    ```
 
 The server will start on `localhost:6379` by default.
@@ -100,11 +100,11 @@ This server supports Redis master-replica replication.
 
 Option 1:
 ```bash
-./run.sh --port 6380 --replicaof "localhost 6379"
+./server.sh --port 6380 --replicaof "localhost 6379"
 ```
 Option 2:
 ```bash
-./run.sh --port 6380 --replicaof 127.0.0.1 6379
+./server.sh --port 6380 --replicaof 127.0.0.1 6379
 ```
 - The replica will connect to the master, perform the handshake, and receive command propagation.
 
@@ -119,7 +119,7 @@ This server supports loading data from Redis RDB files at startup.
 
 **Example:**
 ```bash
-./run.sh --dir /path/to/rdb/dir --dbfilename dump.rdb
+./server.sh --dir /path/to/rdb/dir --dbfilename dump.rdb
 ```
 After loading, all keys and values from the RDB file are available for `GET`, `KEYS *`, and other commands.
 
