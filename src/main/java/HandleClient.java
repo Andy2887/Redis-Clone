@@ -19,14 +19,15 @@ public class HandleClient implements Runnable {
   private static final List<OutputStream> replicaOutputStreams = new CopyOnWriteArrayList<>();
   
   // Storage managers for different data types
-  private static final StringStorage stringStorage = new StringStorage();
+  private final StringStorage stringStorage;
   private static final ListStorage listStorage = new ListStorage();
   private static final StreamStorage streamStorage = new StreamStorage();
   
-  public HandleClient(Socket clientSocket, int clientId, String serverRole) {
-    this.clientSocket = clientSocket;
-    this.clientId = clientId;
-    this.serverRole = serverRole;
+  public HandleClient(Socket clientSocket, int clientId, String serverRole, StringStorage stringStorage) {
+      this.clientSocket = clientSocket;
+      this.clientId = clientId;
+      this.serverRole = serverRole;
+      this.stringStorage = stringStorage;
   }
   
   @Override
@@ -875,7 +876,7 @@ public class HandleClient implements Runnable {
 
   private void handleKeys(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() == 2 && command.get(1).equals("*")) {
-      List<String> keys = new ArrayList<>(Main.stringStorage.getAllKeys());
+      List<String> keys = new ArrayList<>(stringStorage.getAllKeys());
       String resp = StorageManager.RESPProtocol.formatStringArray(keys);
       outputStream.write(resp.getBytes());
       System.out.println("Client " + clientId + " - KEYS * -> " + keys);

@@ -4,6 +4,9 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.util.List;
 
+import StorageManager.ListStorage;
+import StorageManager.StringStorage;
+
 public class HandleReplica {
     public static void startReplica(String masterHost, int masterPort, int port) {
         new Thread(() -> {
@@ -85,7 +88,7 @@ public class HandleReplica {
                             System.out.println("Replica - Received propagated command: " + command);
                             // Process the command, but do NOT send a response to master
                             // Use a dummy OutputStream that discards output
-                            HandleClient dummyClient = new HandleClient(null, -1, "slave");
+                            HandleClient dummyClient = new HandleClient(null, -1, "slave", new StringStorage());
                             java.io.OutputStream devNull = new java.io.OutputStream() {
                                 public void write(int b) {}
                             };

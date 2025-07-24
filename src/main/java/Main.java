@@ -51,7 +51,7 @@ public class Main {
           clientCounter++;
 
           // Create a new thread to handle this client
-          Thread clientThread = new Thread(new HandleClient(clientSocket, clientCounter, serverRole));
+          Thread clientThread = new Thread(new HandleClient(clientSocket, clientCounter, serverRole, stringStorage));
           clientThread.start();
 
           System.out.println("Started thread for client " + clientCounter);
@@ -165,17 +165,27 @@ public class Main {
     while (i < data.length) {
       int b = data[i] & 0xFF;
       if (b == 0xFE) { // DB selector
+        System.out.println("RDB: DB selector found");
         i++;
-        i += readSize(data, i).bytesRead; // skip db index
+        RdbSizeResult dbIndex = readSize(data, i);
+        System.out.println("RDB: DB index = " + dbIndex.value);
+        i += dbIndex.bytesRead;
       } else if (b == 0xFB) { // hash table sizes
+        System.out.println("RDB: Hash table sizes found");
         i++;
-        i += readSize(data, i).bytesRead; // skip hash table size
-        i += readSize(data, i).bytesRead; // skip expires hash table size
+        RdbSizeResult hashTableSize = readSize(data, i);
+        System.out.println("RDB: Hash table size = " + hashTableSize.value);
+        i += hashTableSize.bytesRead;
+        RdbSizeResult expiresHashTableSize = readSize(data, i);
+        System.out.println("RDB: Expires hash table size = " + expiresHashTableSize.value);
+        i += expiresHashTableSize.bytesRead;
       } else if (b == 0xFC || b == 0xFD) { // expire info
         boolean ms = (b == 0xFC);
+        System.out.println("RDB: Expire info found, ms=" + ms);
         i++;
         i += ms ? 8 : 4; // skip expire timestamp
       } else if (b == 0xFF) {
+        System.out.println("RDB: End of file marker found");
         break; // End of file
       } else {
         // Value type (expect 0 for string)
@@ -184,12 +194,15 @@ public class Main {
           // Key
           RdbStringResult keyRes = readRdbString(data, i);
           String key = keyRes.value;
+          System.out.println("RDB: Key = " + key);
           i += keyRes.bytesRead;
           // Value
           RdbStringResult valRes = readRdbString(data, i);
           String value = valRes.value;
+          System.out.println("RDB: Value = " + value);
           i += valRes.bytesRead;
           stringStorage.set(key, value, null);
+          System.out.println("RDB: Added key from RDB to String Storage: " + key + " = " + value);
         }
       }
     }
