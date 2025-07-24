@@ -163,7 +163,11 @@ public class HandleClient implements Runnable {
       case "KEYS":
         handleKeys(command, outputStream);
         break;
-      
+
+      case "INCR":
+        handleIncr(command, outputStream);
+        break;
+
       default:
         handleUnknownCommand(commandName, outputStream);
         break;
@@ -882,6 +886,33 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - KEYS * -> " + keys);
     } else {
       outputStream.write(StorageManager.RESPProtocol.formatError("ERR only KEYS * is supported").getBytes());
+    }
+  }
+
+  private void handleIncr(List<String> command, OutputStream outputStream) throws IOException {
+    if (command.size() == 2) {
+      String key = command.get(1);
+      String value = stringStorage.get(key);
+      if (value != null) {
+        try {
+          long num = Long.parseLong(value);
+          num += 1;
+          stringStorage.set(key, Long.toString(num), null);
+          outputStream.write(RESPProtocol.formatInteger(num).getBytes());
+          System.out.println("Client " + clientId + " - INCR " + key + " -> " + num);
+        } catch (NumberFormatException e) {
+          outputStream.write(RESPProtocol.formatError("ERR value is not an integer or out of range").getBytes());
+          System.out.println("Client " + clientId + " - INCR " + key + " failed: not an integer");
+        }
+      } else {
+        // Key does not exist: set to 1 and return 1
+        stringStorage.set(key, "1", null);
+        outputStream.write(RESPProtocol.formatInteger(1).getBytes());
+        System.out.println("Client " + clientId + " - INCR " + key + " (missing) -> 1");
+      }
+    } else {
+      outputStream.write(RESPProtocol.getArgumentError("incr").getBytes());
+      System.out.println("Client " + clientId + " - Sent error: INCR missing argument");
     }
   }
   
