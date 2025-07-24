@@ -175,7 +175,13 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: ECHO missing argument");
     }
   }
-  
+
+  //
+  // Store key-value pairs with optional expiry
+  //
+  // Syntax:
+  // SET key value [PX milliseconds]
+  // 
   private void handleSet(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 3) {
       String key = command.get(1);
@@ -210,7 +216,13 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: SET missing arguments");
     }
   }
-  
+
+  //
+  // Retrieve values by key
+  //
+  // Syntax:
+  // GET key
+  // 
   private void handleGet(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 2) {
       String key = command.get(1);
@@ -230,7 +242,13 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: GET missing argument");
     }
   }
-  
+
+  //
+  // Add elements to the right of a list
+  //
+  // Syntax:
+  // RPUSH key element [element ...]
+  // 
   private void handleRpush(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 3) {
       String listKey = command.get(1);
@@ -256,32 +274,44 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: RPUSH missing arguments");
     }
   }
-  
+
+  //
+  // Add elements to the left of a list
+  //
+  // Syntax:
+  // LPUSH key element [element ...]
+  // 
   private void handleLpush(List<String> command, OutputStream outputStream) throws IOException {
-      if (command.size() >= 3) {
-          String listKey = command.get(1);
-          
-          // Extract elements to push
-          String[] elements = new String[command.size() - 2];
-          for (int i = 2; i < command.size(); i++) {
-            elements[i - 2] = command.get(i);
-          }
-          
-          // Use ListStorage to push elements
-          int listSize = listStorage.leftPush(listKey, elements);
-          
-          String response = RESPProtocol.formatInteger(listSize);
-          outputStream.write(response.getBytes());
-          System.out.println("Client " + clientId + " - LPUSH " + listKey + " added " + elements.length + " elements, list size: " + listSize);
-          
-          // Notify blocked clients waiting for this list
-          notifyBlockedClients(listKey);
-      } else {
-          outputStream.write(RESPProtocol.getArgumentError("lpush").getBytes());
-          System.out.println("Client " + clientId + " - Sent error: LPUSH missing arguments");
-      }
+    if (command.size() >= 3) {
+        String listKey = command.get(1);
+        
+        // Extract elements to push
+        String[] elements = new String[command.size() - 2];
+        for (int i = 2; i < command.size(); i++) {
+          elements[i - 2] = command.get(i);
+        }
+        
+        // Use ListStorage to push elements
+        int listSize = listStorage.leftPush(listKey, elements);
+        
+        String response = RESPProtocol.formatInteger(listSize);
+        outputStream.write(response.getBytes());
+        System.out.println("Client " + clientId + " - LPUSH " + listKey + " added " + elements.length + " elements, list size: " + listSize);
+        
+        // Notify blocked clients waiting for this list
+        notifyBlockedClients(listKey);
+    } else {
+        outputStream.write(RESPProtocol.getArgumentError("lpush").getBytes());
+        System.out.println("Client " + clientId + " - Sent error: LPUSH missing arguments");
+    }
   }
-  
+
+  //
+  // Remove and return elements from the left of a list
+  //
+  // Syntax:
+  // LPOP key [count]
+  // 
   private void handleLpop(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 2) {
       String listKey = command.get(1);
@@ -335,7 +365,13 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: LPOP missing argument");
     }
   }
-  
+
+  //
+  // Blocking left pop with timeout support
+  //
+  // Syntax:
+  // BLPOP key timeout
+  // 
   private void handleBlpop(List<String> command, OutputStream outputStream) throws IOException {
     System.out.println("Started handling BLPOP command for " + clientId);
     if (command.size() >= 3) {
@@ -413,7 +449,13 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: BLPOP missing arguments");
     }
   }
-  
+
+  //
+  // Get a range of elements from a list
+  //
+  // Syntax:
+  // LRANGE key start stop
+  // 
   private void handleLrange(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 4) {
       String listKey = command.get(1);
@@ -436,7 +478,13 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: LRANGE missing arguments");
     }
   }
-  
+
+  //
+  // Get the length of a list
+  //
+  // Syntax:
+  // LLEN key
+  // 
   private void handleLlen(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 2) {
       String listKey = command.get(1);
@@ -453,7 +501,13 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: LLEN missing argument");
     }
   }
-  
+
+  //
+  // Check type of a key
+  //
+  // Syntax:
+  // TYPE key
+  //
   private void handleType(List<String> command, OutputStream outputStream) throws IOException {
     if (command.size() >= 2) {
       String key = command.get(1);
@@ -487,10 +541,14 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: TYPE missing argument");
     }
   }
-  
+
+  //
+  // Add entries to a stream
+  //
+  // Syntax:
+  // XADD key id field value [field value ...]
+  //
   private void handleXadd(List<String> command, OutputStream outputStream) throws IOException {
-    // XADD stream_key entry_id field1 value1 [field2 value2 ...]
-    // Minimum: XADD stream_key entry_id field1 value1 (5 arguments)
     if (command.size() >= 5 && (command.size() % 2) == 1) {
       String streamKey = command.get(1);
       String entryId = command.get(2);
@@ -528,9 +586,14 @@ public class HandleClient implements Runnable {
       }
     }
   }
-  
+
+  //
+  // Get a range of entries from a stream
+  //
+  // Syntax:
+  // XRANGE key start end
+  //
   private void handleXrange(List<String> command, OutputStream outputStream) throws IOException {
-    // XRANGE stream_key start end
     if (command.size() >= 4) {
       String streamKey = command.get(1);
       String startId = command.get(2);
@@ -548,16 +611,18 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: XRANGE missing arguments");
     }
   }
-  
+
+  //
+  // Read new entries from one or more streams, optionally blocking
+  //
+  // Syntax:
+  // XREAD [BLOCK timeout] streams key [key ...] id [id ...]
+  //
   private void handleXread(List<String> command, OutputStream outputStream) throws IOException {
-    // XREAD [BLOCK timeout] streams stream_key1 [stream_key2 ...] entry_id1 [entry_id2 ...]
-    // Minimum: XREAD streams stream_key entry_id (4 arguments)
-    // With BLOCK: XREAD BLOCK timeout streams stream_key entry_id (6 arguments)
-    
     int streamsIndex = -1;
     long blockTimeoutMs = -1; // -1 means non-blocking
     
-    // Parse optional BLOCK parameter
+    // Parse optional BLOCK parameter and get streamsIndex
     for (int i = 1; i < command.size(); i++) {
       if (command.get(i).equalsIgnoreCase("block")) {
         if (i + 1 >= command.size()) {
@@ -594,7 +659,6 @@ public class HandleClient implements Runnable {
     }
     
     // Calculate number of streams
-    // Format: ... streams key1 key2 ... keyN id1 id2 ... idN
     // Total arguments after "streams" should be even (N keys + N ids)
     int argsAfterStreams = command.size() - streamsIndex - 1; // Subtract everything before and including "streams"
     if (argsAfterStreams % 2 != 0 || argsAfterStreams < 2) {
@@ -602,7 +666,6 @@ public class HandleClient implements Runnable {
       System.out.println("Client " + clientId + " - Sent error: XREAD uneven number of stream keys and IDs");
       return;
     }
-    
     int numStreams = argsAfterStreams / 2;
     
     // Extract stream keys and IDs
