@@ -17,6 +17,7 @@ public class HandleClient implements Runnable {
   private static final String MASTER_REPL_OFFSET = "0";
   // Track the replica's OutputStream and connection state
   private static final List<OutputStream> replicaOutputStreams = new CopyOnWriteArrayList<>();
+  private boolean inTransaction = false;
   
   // Storage managers for different data types
   private final StringStorage stringStorage;
@@ -925,14 +926,21 @@ public class HandleClient implements Runnable {
   }
 
   private void handleMulti(List<String> command, OutputStream outputStream) throws IOException {
+    inTransaction = true;
     outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
     System.out.println("Client " + clientId + " - MULTI -> OK");
   }
 
   private void handleExec(List<String> command, OutputStream outputStream) throws IOException {
-    // Transaction state not tracked yet, always error
-    outputStream.write(RESPProtocol.formatError("ERR EXEC without MULTI").getBytes());
-    System.out.println("Client " + clientId + " - EXEC called without MULTI");
+    if (inTransaction) {
+      // Empty transaction: return empty array
+      outputStream.write(RESPProtocol.EMPTY_ARRAY.getBytes());
+      System.out.println("Client " + clientId + " - EXEC (empty transaction) -> *0");
+      inTransaction = false;
+    } else {
+      outputStream.write(RESPProtocol.formatError("ERR EXEC without MULTI").getBytes());
+      System.out.println("Client " + clientId + " - EXEC called without MULTI");
+    }
   }
   
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
