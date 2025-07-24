@@ -73,7 +73,7 @@ public class HandleClient implements Runnable {
     String commandName = command.get(0).toUpperCase();
 
     // If in transaction and not MULTI/EXEC, queue the command
-    if (inTransaction && !commandName.equals("MULTI") && !commandName.equals("EXEC")) {
+    if (inTransaction && !commandName.equals("MULTI") && !commandName.equals("EXEC") && !commandName.equals("DISCARD")) {
       queuedCommands.add(command);
       outputStream.write(RESPProtocol.formatSimpleString("QUEUED").getBytes());
       System.out.println("Client " + clientId + " - Queued command: " + command);
