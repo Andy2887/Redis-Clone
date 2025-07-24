@@ -168,6 +168,14 @@ public class HandleClient implements Runnable {
         handleIncr(command, outputStream);
         break;
 
+      case "MULTI":
+        handleMulti(command, outputStream);
+        break;
+
+      case "EXEC":
+        handleExec(command, outputStream);
+        break;
+
       default:
         handleUnknownCommand(commandName, outputStream);
         break;
@@ -914,6 +922,17 @@ public class HandleClient implements Runnable {
       outputStream.write(RESPProtocol.getArgumentError("incr").getBytes());
       System.out.println("Client " + clientId + " - Sent error: INCR missing argument");
     }
+  }
+
+  private void handleMulti(List<String> command, OutputStream outputStream) throws IOException {
+    outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
+    System.out.println("Client " + clientId + " - MULTI -> OK");
+  }
+
+  private void handleExec(List<String> command, OutputStream outputStream) throws IOException {
+    // Transaction state not tracked yet, always error
+    outputStream.write(RESPProtocol.formatError("ERR EXEC without MULTI").getBytes());
+    System.out.println("Client " + clientId + " - EXEC called without MULTI");
   }
   
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
