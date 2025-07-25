@@ -1,6 +1,27 @@
-# Redis Server Implementation in Java
+# Redis Clone in Java
 
-A high-performance, thread-safe Redis server implementation built from scratch in Java. This project demonstrates fundamental concepts of network programming, data structures, and concurrent systems design.
+A high-performance, thread-safe Redis server implementation built from scratch in Java.
+
+## 📋 Project Structure
+```
+src/
+├── main/
+│   └── java/
+│       ├── Main.java                # Server entry point: starts server, loads RDB, handles config
+│       ├── HandleClient.java        # Handles client connections, RESP parsing, command execution
+│       ├── HandleReplica.java       # Handles replica handshake and command propagation from master
+│       ├── RdbManager/
+│       │   ├── RdbStringResult.java # Helper for RDB string parsing
+│       │   └── RdbSizeResult.java   # Helper for RDB size parsing
+│       └── StorageManager/
+│           ├── BlockedClient.java   # Data structure for blocked client state (BLPOP/XREAD)
+│           ├── ListStorage.java     # Thread-safe Redis list implementation with blocking support
+│           ├── RESPProtocol.java    # RESP protocol parsing and formatting utilities
+│           ├── StreamEntry.java     # Data structure for Redis stream entries
+│           ├── StreamIdHelper.java  # Stream ID parsing, validation, and comparison
+│           ├── StreamStorage.java   # Thread-safe Redis stream implementation with blocking support
+│           └── StringStorage.java   # Thread-safe Redis string implementation with expiry support
+```
 
 ## 🚀 Features
 
@@ -125,52 +146,17 @@ Option 2:
 ```bash
 ./server.sh --port 6380 --replicaof 127.0.0.1 6379
 ```
-- The replica will connect to the master, perform the handshake, and receive command propagation.
+The replica will connect to the master, perform the handshake, and receive command propagation.
 
 ## 💾 RDB Persistence
 
 This server supports loading data from Redis RDB files at startup.
-
-- Use the `--dir <dir>` and `--dbfilename <filename>` flags to specify the RDB file location.
-- On startup, the server parses the RDB file and loads all string keys, values, and expiry times into memory.
-- Expired keys (at load time) are ignored.
-- Only length-prefixed string encodings are supported for RDB parsing.
 
 **Example:**
 ```bash
 ./server.sh --dir /path/to/rdb/dir --dbfilename dump.rdb
 ```
 After loading, all keys and values from the RDB file are available for `GET`, `KEYS *`, and other commands.
-
-### Supported Data Types
-- **Strings**: UTF-8 encoded text values
-- **Lists**: Ordered collections of strings with O(1) head/tail operations
-- **Streams**: Append-only log data structure for time-series and messaging
-
-## 🏗️ Architecture
-
-### Core Components
-- **Main.java**: Server initialization and client connection handling
-- **HandleClient.java**: Individual client request processing and command execution
-- **HandleReplica.java**: Handles replica handshake and command propagation from master
-- **StorageManager/**: Contains storage classes for strings, lists, streams, and blocking client management
-
-### Design Patterns
-- **Multi-threaded Server**: Each client connection runs in its own thread
-- **Command Pattern**: Individual handler methods for each Redis command
-- **Observer Pattern**: Blocked clients are notified when list or stream elements become available
-- **Thread-safe Collections**: Uses `ConcurrentHashMap` and other thread-safe structures for shared state
-
-## 🧪 Testing
-
-Test the server using any Redis client:
-```bash
-# Using redis-cli
-redis-cli -p 6379
-
-# Using telnet for raw RESP protocol
-telnet localhost 6379
-```
 
 ## 🤝 Contributing
 
@@ -181,36 +167,6 @@ telnet localhost 6379
 5. Commit your changes: `git commit -am 'Add some feature'`
 6. Push to the branch: `git push origin feature-name`
 7. Submit a pull request
-
-### Development Guidelines
-- Follow Java naming conventions
-- Add comprehensive logging for debugging
-- Ensure thread safety for shared resources
-- Write clear, self-documenting code
-- Add unit tests for new features
-
-## 📋 Project Structure
-```
-src/
-├── main/
-│   └── java/
-│       ├── Main.java                # Server entry point: starts server, loads RDB, handles config
-│       ├── HandleClient.java        # Handles client connections, RESP parsing, command execution
-│       ├── HandleReplica.java       # Handles replica handshake and command propagation from master
-│       ├── RdbManager/
-│       │   ├── RdbStringResult.java # Helper for RDB string parsing
-│       │   └── RdbSizeResult.java   # Helper for RDB size parsing
-│       └── StorageManager/
-│           ├── BlockedClient.java   # Data structure for blocked client state (BLPOP/XREAD)
-│           ├── ListStorage.java     # Thread-safe Redis list implementation with blocking support
-│           ├── RESPProtocol.java    # RESP protocol parsing and formatting utilities
-│           ├── StreamEntry.java     # Data structure for Redis stream entries
-│           ├── StreamIdHelper.java  # Stream ID parsing, validation, and comparison
-│           ├── StreamStorage.java   # Thread-safe Redis stream implementation with blocking support
-│           └── StringStorage.java   # Thread-safe Redis string implementation with expiry support
-└── test/
-    └── java/                        # Unit tests
-```
 
 ## 🔮 Future Enhancements
 - Enhanced `REPLICAOF` command: allow dynamic switching between master and replica roles
