@@ -173,15 +173,13 @@ After loading, all keys and values from the RDB file are available for `GET`, `K
 - Full sync: enable replicas to receive and load real RDB files from master
 - Implement `SAVE` command for manual persistence
 
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
-
 ## 🙏 Acknowledgements
 
-This project is implemented following the tutorial from Codecrafters "Build Your Own Redis". Special thanks to the Codecrafters team for their excellent resources and guidance.
+This project is implemented following the tutorial from Codecrafters [Build Your Own Redis](https://app.codecrafters.io/courses/redis/overview). Special thanks to the Codecrafters team for their excellent resources and guidance.
 
-I also use GitHub Copilot as a learning tool while building this project. To encourage Copilot to guide rather than complete tasks for me, I add the following prompt to the end of my requests. This helps me understand the architecture and underlying concepts instead of relying on code generation:
+I also use GitHub Copilot as a learning tool while building this project. This approach helps me learn by doing, while still benefiting from Copilot’s guidance on structure and best practices.
+
+To use Copilot to guide rather than complete tasks for me, I add the following prompt to the end of my requests:
 
 ```
 Please explain the overall architecture and key steps involved, including:
