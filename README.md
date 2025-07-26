@@ -180,3 +180,15 @@ This project is open source and available under the [MIT License](LICENSE).
 ## 🙏 Acknowledgements
 
 This project is implemented following the tutorial from Codecrafters "Build Your Own Redis". Special thanks to the Codecrafters team for their excellent resources and guidance.
+
+I also use GitHub Copilot as a learning tool while building this project. To encourage Copilot to guide rather than complete tasks for me, I add the following prompt to the end of my requests. This helps me understand the architecture and underlying concepts instead of relying on code generation:
+
+```
+Please explain the overall architecture and key steps involved, including:
+
+- What functions or modules should be created  
+- Which libraries or system-level calls are typically involved  
+- What considerations are important for making it  
+
+Please do not write the code—just guide me through the architecture, logic, and relevant technical concepts. I will write the implementation myself.
+```
