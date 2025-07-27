@@ -94,15 +94,16 @@ public class Main {
     for (int i = 0; i < args.length; i++) {
       if ("--dir".equals(args[i]) && i + 1 < args.length) {
         dir = args[i + 1];
+        System.out.println("RDB file in directory: " + dir);
       }
       if ("--dbfilename".equals(args[i]) && i + 1 < args.length) {
         dbfilename = args[i + 1];
+        System.out.println("RDB file name: " + dbfilename);
       }
     }
   }
 
   private static void parseReplicaOfFlag(String[] args) {
-      System.out.println("Parsing replicaof flag...");
       for (int i = 0; i < args.length; i++) {
           if ("--replicaof".equals(args[i])) {
               serverRole = "slave";
@@ -137,6 +138,7 @@ public class Main {
               break;
           }
       }
+      System.out.println("Server Role: " + serverRole);
   }
 
   private static void loadRdbFile() {
@@ -151,6 +153,7 @@ public class Main {
     } catch (IOException e) {
       System.out.println("Failed to load RDB: " + e.getMessage());
     }
+    System.out.println("RDB file loaded successfully");
   }
 
   private static void parseRdb(byte[] data) {
@@ -158,13 +161,25 @@ public class Main {
     Long pendingExpiry = null; // Store expiry for the next key-value pair
 
     // Check header
-    if (data.length < 9 || !new String(Arrays.copyOfRange(data, 0, 9)).equals("REDIS0011")) {
+    if (data.length < 9 || !new String(Arrays.copyOfRange(data, 0, 9)).equals("REDIS0012")) {
         System.out.println("Invalid RDB header");
         return;
     }
     i = 9;
     while (i < data.length) {
         int b = data[i] & 0xFF;
+        if (b == 0xFA) { // Metadata subsection
+            // Skip metadata section
+            System.out.println("RDB: Metadata subsection found, skipping...");
+            i++; // Move past 0xFA
+            // Read metadata name
+            RdbStringResult metaNameRes = readRdbString(data, i);
+            i += metaNameRes.bytesRead;
+            // Read metadata value
+            RdbStringResult metaValueRes = readRdbString(data, i);
+            i += metaValueRes.bytesRead;
+            continue;
+        }
         if (b == 0xFE) { // DB selector
             System.out.println("RDB: DB selector found");
             i++;
