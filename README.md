@@ -158,6 +158,8 @@ This server supports loading data from Redis RDB files at startup.
 ```
 After loading, all keys and values from the RDB file are available for `GET`, `KEYS *`, and other commands.
 
+Note: Currently, my Redis Clone only Supports reading String data type from RDB files. 
+
 ## 🤝 Contributing
 
 1. Fork the repository
