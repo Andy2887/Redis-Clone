@@ -13,6 +13,7 @@ src/
 │       ├── RdbManager/
 │       │   ├── RdbStringResult.java # Helper for RDB string parsing
 │       │   └── RdbSizeResult.java   # Helper for RDB size parsing
+│       │   └── RdbWriter.java       # Helper for writing RDB file
 │       └── StorageManager/
 │           ├── BlockedClient.java   # Data structure for blocked client state (BLPOP/XREAD)
 │           ├── ListStorage.java     # Thread-safe Redis list implementation with blocking support
@@ -31,6 +32,8 @@ src/
   - `CONFIG GET <param>` - Retrieve server configuration parameters (`dir`, `dbfilename`)
 - **Role Management**:
   - `REPLICAOF NO ONE` - Switch server to master role
+- **Persistence**:
+  - `SAVE` - Perform a synchronous save of the dataset to an RDB file
 - **String Operations**: 
   - `SET key value [PX milliseconds]` - Store key-value pairs with optional expiry
   - `GET key` - Retrieve values by key
@@ -130,6 +133,10 @@ QUEUED
 > EXEC
 1) OK
 2) (integer) 1
+
+# Save the current dataset to an RDB file
+> SAVE
+OK
 ```
 
 ## 🪞 Replication

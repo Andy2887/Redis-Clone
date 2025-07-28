@@ -1,4 +1,6 @@
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -8,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import StorageManager.*;
+import RdbManager.RdbWriter;
 
 public class HandleClient implements Runnable {
   private Socket clientSocket;
@@ -189,6 +192,10 @@ public class HandleClient implements Runnable {
 
       case "DISCARD":
         handleDiscard(command, outputStream);
+        break;
+
+      case "SAVE":
+        handleSave(command, outputStream);
         break;
 
       default:
@@ -980,6 +987,23 @@ public class HandleClient implements Runnable {
       outputStream.write(RESPProtocol.formatError("ERR DISCARD without MULTI").getBytes());
       System.out.println("Client " + clientId + " - DISCARD called without MULTI");
     }
+  }
+
+  private void handleSave(List<String> command, OutputStream outputStream) throws IOException {
+    RdbWriter writer = new RdbWriter(stringStorage);
+    byte[] rdbFileBytes = writer.serializeToRdb();
+    String currentDir = System.getProperty("user.dir");
+    File tempFile = new File(currentDir, "dump.rdb.tmp");
+    File rdbFile = new File(currentDir, "dump.rdb");
+    try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+        fos.write(rdbFileBytes);
+    }
+    // Atomically rename
+    if (!tempFile.renameTo(rdbFile)) {
+        throw new IOException("Failed to rename temp RDB file");
+    }
+    System.out.println("RDB file created at: " + rdbFile.getAbsolutePath());
+    outputStream.write(RESPProtocol.OK_RESPONSE.getBytes());
   }
   
   private void handleUnknownCommand(String commandName, OutputStream outputStream) throws IOException {
