@@ -133,10 +133,6 @@ QUEUED
 > EXEC
 1) OK
 2) (integer) 1
-
-# Save the current dataset to an RDB file
-> SAVE
-OK
 ```
 
 ## 🪞 Replication
@@ -180,7 +176,7 @@ Note: Currently, my Redis Clone only Supports reading String data type from RDB 
 ## 🔮 Future Enhancements
 - Enhanced `REPLICAOF` command: allow dynamic switching between master and replica roles
 - Full sync: enable replicas to receive and load real RDB files from master
-- Implement `SAVE` command for manual persistence
+- Fix persistence bug in HandleReplica
 
 ## 🙏 Acknowledgements
 

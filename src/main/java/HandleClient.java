@@ -869,15 +869,14 @@ public class HandleClient implements Runnable {
       outputStream.write(response.getBytes());
       System.out.println("Client " + clientId + " - PSYNC received, responded with: " + response.trim());
 
-      // Send an empty RDB file as a bulk string (no trailing \r\n after binary)
-      byte[] emptyRdb = hexStringToByteArray(
-          "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2"
-      );
-      String bulkHeader = "$" + emptyRdb.length + "\r\n";
+      // Send RDB file as a bulk string (no trailing \r\n after binary)
+      RdbWriter writer = new RdbWriter(stringStorage);
+      byte[] rdbFileBytes = writer.serializeToRdb();
+      String bulkHeader = "$" + rdbFileBytes.length + "\r\n";
       outputStream.write(bulkHeader.getBytes());
-      outputStream.write(emptyRdb); // No trailing \r\n
+      outputStream.write(rdbFileBytes); // No trailing \r\n
       outputStream.flush();
-      System.out.println("Client " + clientId + " - Sent empty RDB file (" + emptyRdb.length + " bytes)");
+      System.out.println("Client " + clientId + " - Sent RDB file (" + rdbFileBytes.length + " bytes)");
 
       // Add this replica's OutputStream to the list
       synchronized (HandleClient.class) {

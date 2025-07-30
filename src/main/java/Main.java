@@ -149,14 +149,14 @@ public class Main {
     }
     try (FileInputStream in = new FileInputStream(rdbFile)) {
       byte[] data = in.readAllBytes();
-      parseRdb(data);
+      parseRdb(data, stringStorage);
     } catch (IOException e) {
       System.out.println("Failed to load RDB: " + e.getMessage());
     }
     System.out.println("RDB file loaded successfully");
   }
 
-  private static void parseRdb(byte[] data) {
+  private static void parseRdb(byte[] data, StringStorage storage) {
     int i = 0;
     Long pendingExpiry = null; // Store expiry for the next key-value pair
 
@@ -241,7 +241,7 @@ public class Main {
                 if (expiryToSet != null && expiryToSet <= System.currentTimeMillis()) {
                     System.out.println("RDB: Key " + key + " expired at load time, skipping");
                 } else {
-                    stringStorage.set(key, value, expiryToSet);
+                    storage.set(key, value, expiryToSet);
                     System.out.println("RDB: Added key from RDB to String Storage: " + key + " = " + value + (expiryToSet != null ? (" (expiry: " + expiryToSet + ")") : ""));
                 }
             }
