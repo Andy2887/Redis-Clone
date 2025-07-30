@@ -32,7 +32,7 @@ public class Main {
     
     // If replica, connect to master and send PING, then REPLCONF commands
     if ("slave".equals(serverRole) && masterHost != null && masterPort > 0) {
-      HandleReplica.startReplica(masterHost, masterPort, port);
+      HandleReplica.startReplica(masterHost, masterPort, port, stringStorage);
     }
 
     try {

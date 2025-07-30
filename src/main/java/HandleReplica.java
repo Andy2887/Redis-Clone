@@ -6,7 +6,7 @@ import java.util.List;
 import StorageManager.StringStorage;
 
 public class HandleReplica {
-    public static void startReplica(String masterHost, int masterPort, int port) {
+    public static void startReplica(String masterHost, int masterPort, int port, StringStorage replicaStorage) {
         new Thread(() -> {
             try (Socket masterSocket = new Socket(masterHost, masterPort)) {
                 OutputStream out = masterSocket.getOutputStream();
@@ -76,6 +76,12 @@ public class HandleReplica {
 
                 System.out.println("Replica handshake with master complete.");
 
+                // Create a persistent StringStorage and HandleClient for the replica
+                HandleClient dummyClient = new HandleClient(null, -1, "slave", replicaStorage);
+                java.io.OutputStream devNull = new java.io.OutputStream() {
+                    public void write(int b) {}
+                };
+
                 // Now process propagated commands from master
                 while (true) {
                     String line = reader.readLine();
@@ -85,11 +91,6 @@ public class HandleReplica {
                         if (command != null && !command.isEmpty()) {
                             System.out.println("Replica - Received propagated command: " + command);
                             // Process the command, but do NOT send a response to master
-                            // Use a dummy OutputStream that discards output
-                            HandleClient dummyClient = new HandleClient(null, -1, "slave", new StringStorage());
-                            java.io.OutputStream devNull = new java.io.OutputStream() {
-                                public void write(int b) {}
-                            };
                             dummyClient.handleCommand(command, devNull);
                         }
                     }

@@ -176,7 +176,7 @@ Note: Currently, my Redis Clone only Supports reading String data type from RDB 
 ## 🔮 Future Enhancements
 - Enhanced `REPLICAOF` command: allow dynamic switching between master and replica roles
 - Full sync: enable replicas to receive and load real RDB files from master
-- Fix persistence bug in HandleReplica
+- List and Stream propagated commands not working
 
 ## 🙏 Acknowledgements
 
