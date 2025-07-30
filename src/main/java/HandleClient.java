@@ -25,14 +25,16 @@ public class HandleClient implements Runnable {
   
   // Storage managers for different data types
   private final StringStorage stringStorage;
-  private static final ListStorage listStorage = new ListStorage();
-  private static final StreamStorage streamStorage = new StreamStorage();
+  private final ListStorage listStorage;
+  private final StreamStorage streamStorage;
   
-  public HandleClient(Socket clientSocket, int clientId, String serverRole, StringStorage stringStorage) {
+  public HandleClient(Socket clientSocket, int clientId, String serverRole, StringStorage stringStorage, ListStorage listStorage, StreamStorage streamStorage) {
       this.clientSocket = clientSocket;
       this.clientId = clientId;
       this.serverRole = serverRole;
       this.stringStorage = stringStorage;
+      this.listStorage = listStorage;
+      this.streamStorage = streamStorage;
   }
   
   @Override

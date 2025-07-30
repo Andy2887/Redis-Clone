@@ -5,6 +5,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Arrays;
 
+import StorageManager.ListStorage;
+import StorageManager.StreamStorage;
 import StorageManager.StringStorage;
 import RdbManager.RdbStringResult;
 import RdbManager.RdbSizeResult;
@@ -16,6 +18,8 @@ public class Main {
   public static String dir = "/tmp";
   public static String dbfilename = "dump.rdb";
   public static final StringStorage stringStorage = new StringStorage();
+  public static final ListStorage listStorage = new ListStorage();
+  public static final StreamStorage streamStorage = new StreamStorage();
 
   public static void main(String[] args) {
     // You can use print statements as follows for debugging, they'll be visible
@@ -32,7 +36,7 @@ public class Main {
     
     // If replica, connect to master and send PING, then REPLCONF commands
     if ("slave".equals(serverRole) && masterHost != null && masterPort > 0) {
-      HandleReplica.startReplica(masterHost, masterPort, port, stringStorage);
+      HandleReplica.startReplica(masterHost, masterPort, port, stringStorage, listStorage, streamStorage);
     }
 
     try {
@@ -51,7 +55,7 @@ public class Main {
           clientCounter++;
 
           // Create a new thread to handle this client
-          Thread clientThread = new Thread(new HandleClient(clientSocket, clientCounter, serverRole, stringStorage));
+          Thread clientThread = new Thread(new HandleClient(clientSocket, clientCounter, serverRole, stringStorage, listStorage, streamStorage));
           clientThread.start();
 
           System.out.println("Started thread for client " + clientCounter);

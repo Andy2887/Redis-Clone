@@ -4,9 +4,11 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.util.List;
 import StorageManager.StringStorage;
+import StorageManager.ListStorage;
+import StorageManager.StreamStorage;
 
 public class HandleReplica {
-    public static void startReplica(String masterHost, int masterPort, int port, StringStorage replicaStorage) {
+    public static void startReplica(String masterHost, int masterPort, int port, StringStorage stringStorage, ListStorage listStorage, StreamStorage streamStorage) {
         new Thread(() -> {
             try (Socket masterSocket = new Socket(masterHost, masterPort)) {
                 OutputStream out = masterSocket.getOutputStream();
@@ -77,7 +79,7 @@ public class HandleReplica {
                 System.out.println("Replica handshake with master complete.");
 
                 // Create a persistent StringStorage and HandleClient for the replica
-                HandleClient dummyClient = new HandleClient(null, -1, "slave", replicaStorage);
+                HandleClient dummyClient = new HandleClient(null, -1, "slave", stringStorage, listStorage, streamStorage);
                 java.io.OutputStream devNull = new java.io.OutputStream() {
                     public void write(int b) {}
                 };

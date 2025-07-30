@@ -71,9 +71,10 @@ src/
 1. Clone the repository
 
 2. Start the project:
-   ```bash
-   ./server.sh
-   ```
+
+```bash
+./server.sh
+```
 
 The server will start on `localhost:6379` by default.
 
@@ -111,8 +112,8 @@ OK
 2) "first"
 
 # Stream operations
-> XADD mystream * field1 value1
-"1680000000000-0"
+> XADD stream_key 1526919030474-0 temperature 36 humidity 95
+"1526919030474-0"
 > XRANGE mystream - +
 1) 1) "1680000000000-0"
    2) 1) "field1"
@@ -177,6 +178,7 @@ Note: Currently, my Redis Clone only Supports reading String data type from RDB 
 - Enhanced `REPLICAOF` command: allow dynamic switching between master and replica roles
 - Full sync: enable replicas to receive and load real RDB files from master
 - List and Stream propagated commands not working
+- Fix bug in XADD command (auto-generate time part and sequence number not working)
 
 ## 🙏 Acknowledgements
 
