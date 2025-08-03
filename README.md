@@ -48,7 +48,13 @@ src/
 - **Stream Operations**:
   - `XADD key id field value [field value ...]` - Add entries to a stream
   - `XRANGE key start end` - Get a range of entries from a stream
-  - `XREAD [BLOCK timeout] streams key [key ...] id [id ...]` - Read new entries from one or more streams, optionally blocking
+  - `XREAD [BLOCK timeout] streams key1 [key2 ...] id1 [id2 ...]` - Read new entries from one or more streams, optionally blocking
+- **Key Operations**:
+  - `TYPE key` - Check the data type of a key (returns: string, list, stream, or none)
+  - `KEYS *` - List all keys in the database
+  - `INCR key` - Increment the integer value of a key by 1
+- **Server Information**:
+  - `INFO replication` - Get information about replication status
 - **Transaction Support**:
   - `MULTI` - Start a transaction block
   - `EXEC` - Execute all queued commands in the transaction
@@ -114,6 +120,10 @@ OK
 # Stream operations
 > XADD stream_key 1526919030474-0 temperature 36 humidity 95
 "1526919030474-0"
+> XADD stream_key * foo bar
+# Note: When you use redis-cli in shell, you should type "*" instead of *.
+# If you use *, The shell is expanding the * wildcard to match all files in your current directory.
+# This is a shell expansion issue, not a problem with my code. The * is being interpreted by shell before it reaches redis-cli
 > XRANGE mystream - +
 1) 1) "1680000000000-0"
    2) 1) "field1"
@@ -177,8 +187,6 @@ Note: Currently, my Redis Clone only Supports reading String data type from RDB 
 ## 🔮 Future Enhancements
 - Enhanced `REPLICAOF` command: allow dynamic switching between master and replica roles
 - Full sync: enable replicas to receive and load real RDB files from master
-- List and Stream propagated commands not working
-- Fix bug in XADD command (auto-generate time part and sequence number not working)
 
 ## 🙏 Acknowledgements
 
