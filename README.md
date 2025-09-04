@@ -199,9 +199,9 @@ To use Copilot to guide rather than complete tasks for me, I add the following p
 ```
 Please explain the overall architecture and key steps involved, including:
 
-- What functions or modules should be created  
-- Which libraries or system-level calls are typically involved  
-- What considerations are important for making it  
+- The functions or modules that should be created
+- The libraries or system-level calls that are typically involved, with code examples showing how they are used
+- The important considerations to keep in mind when building it
 
-Please do not write the code—just guide me through the architecture, logic, and relevant technical concepts. I will write the implementation myself.
+Please don’t provide a full implementation—just guide me through the architecture, logic, and relevant technical concepts. I will write the code myself.
 ```
