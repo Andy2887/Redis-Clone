@@ -1,4 +1,5 @@
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -12,7 +13,9 @@ public class HandleReplica {
         new Thread(() -> {
             try (Socket masterSocket = new Socket(masterHost, masterPort)) {
                 OutputStream out = masterSocket.getOutputStream();
-                java.io.InputStream in = masterSocket.getInputStream();
+                InputStream in = masterSocket.getInputStream();
+                // InputStreamReader: converts a byte stream into a text stream
+                // BufferedReader: wraps a reader and adds buffering for efficient reading
                 BufferedReader reader = new BufferedReader(new InputStreamReader(in));
 
                 // Send RESP array: *1\r\n$4\r\nPING\r\n
@@ -80,7 +83,7 @@ public class HandleReplica {
 
                 // Create a persistent StringStorage and HandleClient for the replica
                 HandleClient dummyClient = new HandleClient(null, -1, "slave", stringStorage, listStorage, streamStorage);
-                java.io.OutputStream devNull = new java.io.OutputStream() {
+                OutputStream devNull = new OutputStream(){
                     public void write(int b) {}
                 };
 
