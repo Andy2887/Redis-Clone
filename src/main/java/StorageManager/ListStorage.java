@@ -1,10 +1,10 @@
 package StorageManager;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.LinkedList;
 
 /**
  * Storage manager for Redis list data type.
@@ -12,9 +12,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public class ListStorage {
     // Storage for lists (key -> list of elements)
-    private final Map<String, List<String>> lists = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> lists = new HashMap<>();
     // Storage for blocked clients waiting for list elements (listKey -> queue of blocked clients)
-    private final Map<String, Queue<BlockedClient>> blockedClients = new ConcurrentHashMap<>();
+    private final Map<String, Queue<BlockedClient>> blockedClients = new HashMap<>();
     // Global lock for all list operations to ensure consistency with blocking operations
     private final Object listOperationsLock = new Object();
     
@@ -66,105 +66,105 @@ public class ListStorage {
     
     /**
      * Pops elements from the left (beginning) of a list.
-     * 
+     *
      * @param key The list key
      * @param count The number of elements to pop (default 1)
      * @return The popped elements, or empty list if key doesn't exist or list is empty
      */
     public List<String> leftPop(String key, int count) {
-        List<String> list = lists.get(key);
-        List<String> result = new ArrayList<>();
-        
-        if (list == null || list.isEmpty()) {
-            return result; // Empty result
-        }
-        
-        synchronized (list) {
-            int elementsToRemove = Math.min(count, list.size());
-            
-            for (int i = 0; i < elementsToRemove; i++) {
-                if (!list.isEmpty()) {
-                    result.add(list.remove(0));
-                }
+        synchronized (listOperationsLock) {
+            List<String> list = lists.get(key);
+            List<String> result = new ArrayList<>();
+
+            if (list == null || list.isEmpty()) {
+                return result; // Empty result
             }
-            
+
+            int elementsToRemove = Math.min(count, list.size());
+
+            for (int i = 0; i < elementsToRemove; i++) {
+                result.add(list.remove(0));
+            }
+
             // Clean up empty list
             if (list.isEmpty()) {
                 lists.remove(key);
             }
+
+            return result;
         }
-        
-        return result;
     }
     
     /**
      * Gets a range of elements from a list.
-     * 
+     *
      * @param key The list key
      * @param start The start index (can be negative)
      * @param end The end index (can be negative)
      * @return The elements in the specified range, or empty list if key doesn't exist
      */
     public List<String> range(String key, int start, int end) {
-        List<String> list = lists.get(key);
-        
-        if (list == null) {
-            return new ArrayList<>(); // Empty result
-        }
-        
-        synchronized (list) {
+        synchronized (listOperationsLock) {
+            List<String> list = lists.get(key);
+
+            if (list == null) {
+                return new ArrayList<>(); // Empty result
+            }
+
             int listSize = list.size();
-            
+
             // Convert negative indexes to positive indexes
             int actualStart = convertNegativeIndex(start, listSize);
             int actualEnd = convertNegativeIndex(end, listSize);
-            
+
             // Handle edge cases
             if (actualStart >= listSize || actualStart > actualEnd || actualEnd < 0) {
                 return new ArrayList<>(); // Empty result
             }
-            
+
             // Ensure indexes are within bounds
             actualStart = Math.max(0, actualStart);
             actualEnd = Math.min(actualEnd, listSize - 1);
-            
+
             // Extract elements
             List<String> result = new ArrayList<>();
             for (int i = actualStart; i <= actualEnd; i++) {
                 result.add(list.get(i));
             }
-            
+
             return result;
         }
     }
     
     /**
      * Gets the length of a list.
-     * 
+     *
      * @param key The list key
      * @return The length of the list, or 0 if key doesn't exist
      */
     public int length(String key) {
-        List<String> list = lists.get(key);
-        
-        if (list == null) {
-            return 0;
-        }
-        
-        synchronized (list) {
+        synchronized (listOperationsLock) {
+            List<String> list = lists.get(key);
+
+            if (list == null) {
+                return 0;
+            }
+
             return list.size();
         }
     }
     
     /**
      * Checks if a list exists and is not empty.
-     * 
+     *
      * @param key The list key
      * @return true if the list exists and has elements
      */
     public boolean exists(String key) {
-        List<String> list = lists.get(key);
-        return list != null && !list.isEmpty();
+        synchronized (listOperationsLock) {
+            List<String> list = lists.get(key);
+            return list != null && !list.isEmpty();
+        }
     }
     
     /**
@@ -184,7 +184,7 @@ public class ListStorage {
             }
             
             // Block the client
-            Queue<BlockedClient> clientQueue = blockedClients.computeIfAbsent(key, _ -> new ConcurrentLinkedQueue<>());
+            Queue<BlockedClient> clientQueue = blockedClients.computeIfAbsent(key, _ -> new LinkedList<>());
             clientQueue.offer(blockedClient);
             
             return true; // Client was blocked
@@ -255,39 +255,43 @@ public class ListStorage {
     
     /**
      * Gets the order of blocked clients for a list (for debugging).
-     * 
+     *
      * @param key The list key
      * @return A string representation of the client queue order
      */
     public String getBlockedClientOrder(String key) {
-        Queue<BlockedClient> queue = blockedClients.get(key);
-        if (queue == null || queue.isEmpty()) {
-            return "[]";
-        }
-        
-        StringBuilder sb = new StringBuilder();
-        sb.append("[");
-        boolean first = true;
-        for (BlockedClient client : queue) {
-            if (!first) {
-                sb.append(", ");
+        synchronized (listOperationsLock) {
+            Queue<BlockedClient> queue = blockedClients.get(key);
+            if (queue == null || queue.isEmpty()) {
+                return "[]";
             }
-            sb.append(client.clientId);
-            first = false;
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("[");
+            boolean first = true;
+            for (BlockedClient client : queue) {
+                if (!first) {
+                    sb.append(", ");
+                }
+                sb.append(client.clientId);
+                first = false;
+            }
+            sb.append("]");
+            return sb.toString();
         }
-        sb.append("]");
-        return sb.toString();
     }
     
     /**
      * Gets the number of blocked clients for a list.
-     * 
+     *
      * @param key The list key
      * @return The number of blocked clients
      */
     public int getBlockedClientCount(String key) {
-        Queue<BlockedClient> queue = blockedClients.get(key);
-        return queue != null ? queue.size() : 0;
+        synchronized (listOperationsLock) {
+            Queue<BlockedClient> queue = blockedClients.get(key);
+            return queue != null ? queue.size() : 0;
+        }
     }
     
     /**
