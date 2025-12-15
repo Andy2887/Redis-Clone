@@ -242,17 +242,3 @@ Planned test coverage for:
 ## 🙏 Acknowledgements
 
 This project is implemented following the tutorial from Codecrafters [Build Your Own Redis](https://app.codecrafters.io/courses/redis/overview). Special thanks to the Codecrafters team for their excellent resources and guidance.
-
-I also use GitHub Copilot as a learning tool while building this project. This approach helps me learn by doing, while still benefiting from Copilot’s guidance on structure and best practices.
-
-To use Copilot to guide rather than complete tasks for me, I add the following prompt to the end of my requests:
-
-```
-Please explain the overall architecture and key steps involved, including:
-
-- The functions or modules that should be created
-- The libraries or system-level calls that are typically involved, with code examples showing how they are used
-- The important considerations to keep in mind when building it
-
-Please don’t provide a full implementation—just guide me through the architecture, logic, and relevant technical concepts. I will write the code myself.
-```
