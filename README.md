@@ -172,7 +172,58 @@ This server supports loading data from Redis RDB files at startup.
 ```
 After loading, all keys and values from the RDB file are available for `GET`, `KEYS *`, and other commands.
 
-Note: Currently, my Redis Clone only Supports reading String data type from RDB files. 
+Note: Currently, my Redis Clone only Supports reading String data type from RDB files.
+
+## 🧪 Testing
+
+This project includes a comprehensive test suite using JUnit 5 to ensure reliability and correctness.
+
+### Running Tests
+
+```bash
+# Run all tests
+mvn test
+
+# Run tests quietly (less verbose output)
+mvn test -q
+
+# Run a specific test class
+mvn test -Dtest=StringStorageTest
+
+# Run tests with coverage
+mvn clean test
+```
+
+### Test Coverage
+
+Currently implemented tests:
+
+#### **StringStorage Tests** (42 tests)
+- **Basic Operations**: SET, GET, overwriting values, multiple keys
+- **Expiry Management**: Time-based expiration with millisecond precision
+- **Key Operations**: EXISTS, REMOVE, SIZE, getAllKeys
+- **Expiry APIs**: setExpiry, removeExpiry, getExpiryTime, cleanupExpiredKeys
+- **Edge Cases**: Empty strings, long values, various key formats
+- **Concurrency**: Multi-threaded operations, race conditions, thread safety
+- **Stress Tests**: 1,000+ keys with varying expiry times
+
+### Writing New Tests
+
+Test files are located in `src/test/java/`. To add new tests:
+
+1. Create a test class in the appropriate package under `src/test/java/`
+2. Use JUnit 5 annotations (`@Test`, `@BeforeEach`, `@DisplayName`)
+3. Follow the existing test patterns in `StringStorageTest.java`
+4. Run `mvn test` to verify your tests pass
+
+### Future Test Plans
+
+Planned test coverage for:
+- List Operations (LPUSH, RPUSH, LPOP, BLPOP, LRANGE)
+- Stream Operations (XADD, XRANGE, XREAD with blocking)
+- Transaction Operations (MULTI, EXEC, DISCARD)
+- Replication (Master-replica sync, command propagation)
+- RDB Persistence (Loading, saving, expiry handling)
 
 ## 🤝 Contributing
 
