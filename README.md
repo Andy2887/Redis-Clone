@@ -207,6 +207,20 @@ Currently implemented tests:
 - **Concurrency**: Multi-threaded operations, race conditions, thread safety
 - **Stress Tests**: 1,000+ keys with varying expiry times
 
+#### **ListStorage Tests** (35 tests)
+- **Basic Operations**: LPUSH, RPUSH with single and multiple elements
+- **Pop Operations**: LPOP with count parameter, handling empty lists
+- **Range Operations**: LRANGE with positive, negative, and mixed indices
+- **Length & Exists**: LLEN and EXISTS operations
+- **Blocking Operations**: blockClient, unblockClient, popForBlockedClient, FIFO ordering
+- **Edge Cases**: Empty strings, special characters, multiple independent lists
+- **Concurrency**: Concurrent push/pop, blocking operations, stress tests with 200+ threads
+
+#### **Transaction Tests** (7 tests)
+- **MULTI Command**: Returns OK, initializes transaction state
+- **Command Queuing**: Commands are queued after MULTI, not executed immediately
+- **EXEC Command**: Executes all queued commands, clears transaction state
+
 ### Writing New Tests
 
 Test files are located in `src/test/java/`. To add new tests:
@@ -219,9 +233,7 @@ Test files are located in `src/test/java/`. To add new tests:
 ### Future Test Plans
 
 Planned test coverage for:
-- List Operations (LPUSH, RPUSH, LPOP, BLPOP, LRANGE)
 - Stream Operations (XADD, XRANGE, XREAD with blocking)
-- Transaction Operations (MULTI, EXEC, DISCARD)
 - Replication (Master-replica sync, command propagation)
 - RDB Persistence (Loading, saving, expiry handling)
 
